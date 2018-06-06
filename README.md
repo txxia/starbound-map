@@ -7,8 +7,12 @@ This tool is built on top of @blixt's awesome work: [Starbound Utilities](https:
 Feel free to contribute either via submitting pull requests or writing
 up issues with suggestions and/or bugs.
 
-Release
--------
+Download
+--------
+https://github.com/txxia/starbound-map/releases
+
+Releasing
+---------
 ```
 pyinstaller mapviewer.spec
 ```
