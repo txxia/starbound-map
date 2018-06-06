@@ -1,0 +1,4 @@
+glfw==1.6.0
+imgui==0.1.0
+numpy==1.14.3
+PyOpenGL==3.1.0
