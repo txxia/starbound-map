@@ -26,11 +26,17 @@ class G:
     """
     Global runtime-only data
     """
+    minimized = False
+
     gui_show_help_overlay = False
     gui_config_changed = False
 
     framebuffer_size = np.zeros(2)
     mouse_in_map_normal01 = np.zeros(2)
+
+    @staticmethod
+    def on_minimization_event(is_minimized):
+        G.minimized = is_minimized
 
 
 class WorldViewer(object):
@@ -268,6 +274,7 @@ def impl_glfw_init():
         int(width), int(height), window_name, None, None
     )
     glfw.make_context_current(window)
+    glfw.set_window_iconify_callback(window, lambda _, minimized: G.on_minimization_event(minimized))
 
     if not window:
         glfw.terminate()
@@ -284,6 +291,8 @@ def main():
     viewer = WorldViewer()
     while not glfw.window_should_close(window):
         glfw.poll_events()
+        if G.minimized:  # do not render zero sized frame
+            continue
         impl.process_inputs()
         framebuffer_size = glfw.get_framebuffer_size(window)
         gl.glViewport(0, 0, framebuffer_size[0], framebuffer_size[1])
