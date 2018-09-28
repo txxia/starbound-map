@@ -1,10 +1,12 @@
 # -*- mode: python -*-
+import os
 
+spec_root = os.path.abspath('.')
 block_cipher = None
 
 
 a = Analysis(['mapviewer.py'],
-             pathex=['D:\\workspace\\starbound-map'],
+             pathex=[spec_root],
              binaries=[],
              datas=[('glfw3.dll', '.')],
              hiddenimports=[],

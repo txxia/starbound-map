@@ -28,14 +28,11 @@ VSVersionInfo(
       StringTable(
         u'040904B0',
         [
-        # StringStruct(u'CompanyName', u'Microsoft Corporation'),
         StringStruct(u'FileDescription', u'Starbound Map Viewer'),
         StringStruct(u'FileVersion', u''),
-        #StringStruct(u'InternalName', u'cmd'),
         StringStruct(u'LegalCopyright', u'© Blixt, txxia'),
-        #StringStruct(u'OriginalFilename', u'Cmd.Exe'),
         StringStruct(u'ProductName', u'Starbound Map Viewer'),
-        StringStruct(u'ProductVersion', u'0.0.1')
+        StringStruct(u'ProductVersion', u'')
         ])
       ]),
     # En-US
