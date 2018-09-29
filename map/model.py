@@ -1,5 +1,8 @@
+import typing as tp
+
 import numpy as np
 
+from starbound.data import World
 from utils import cache
 
 REGION_DIM = 32
@@ -13,10 +16,10 @@ class WorldView:
     Represents a view to the world map.
     """
 
-    def __init__(self, world, center_region, grid_dim=5):
+    def __init__(self, world: World, center_region: np.ndarray, grid_dim: int = 5):
         """
-        :param world: world object
-        :param center_region: center tile coordinate of the view, as tuple
+        :param world: starbound world
+        :param center_region: center tile coordinate of the view
         :param grid_dim: number of cells on any side of the grid
         """
         self._on_region_updated = []
@@ -45,8 +48,7 @@ class WorldView:
         return self._center_region
 
     @center_region.setter
-    def center_region(self, value):
-        assert isinstance(value, np.ndarray)
+    def center_region(self, value: np.ndarray):
         assert value.size == 2
         assert value.dtype == np.int
         if any(self._center_region != value):
@@ -58,16 +60,15 @@ class WorldView:
         return self._grid_dim
 
     @grid_dim.setter
-    def grid_dim(self, value):
-        assert type(value) == int
-        assert 0 < value
+    def grid_dim(self, value: int):
+        assert value > 0
         if self._grid_dim != value:
             self._grid_dim = value
 
     def on_region_updated(self, callback):
         self._on_region_updated.append(callback)
 
-    def get_location(self, coord01):
+    def get_location(self, coord01: np.ndarray):
         """
         Find the location indicated by the given coordinate in the current view
         :param coord01: coordinate in the current view
@@ -78,10 +79,10 @@ class WorldView:
         return region_coord, tile_coord
 
     @cache.memoized_method(maxsize=1024)
-    def get_region(self, region_coord):
+    def get_region(self, region_coord: tp.Sequence[int]) -> tp.Optional[bytes]:
         """
         :param region_coord: region coordinate
-        :return: regions at the given location, None if not available
+        :return: regions at the given location
         """
         try:
             return self.world.get_raw_tiles(region_coord[0], region_coord[1])

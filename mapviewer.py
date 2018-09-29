@@ -12,7 +12,7 @@ import imgui
 from imgui.integrations.glfw import GlfwRenderer
 
 from starbound import GameDirectory
-from map import WorldRenderer, WorldView, REGION_DIM
+from map import WorldRenderer, RenderParameters, WorldView, REGION_DIM
 from utils.config import CONFIG
 
 CONFIG_SECTION = 'map_viewer'
@@ -31,7 +31,8 @@ class G:
     gui_show_help_overlay = False
     gui_config_changed = False
 
-    framebuffer_size = np.zeros(2)
+    renderer_params = RenderParameters()
+
     mouse_in_map_normal01 = np.zeros(2)
 
     @staticmethod
@@ -88,24 +89,24 @@ class WorldViewer(object):
         else:
             self.world_renderer.view = self.view = None
 
-    def render(self, framebuffer_size):
+    def render(self, frame_size: np.array):
         """
-        :param framebuffer_size: tuple of 2 ints indicating framesize
+        :param frame_size: indicating framebuffer size
         """
-        G.framebuffer_size = framebuffer_size
-        aspect = float(framebuffer_size[1]) / framebuffer_size[0]
+        aspect = float(frame_size[1]) / frame_size[0]
+
         map_rect_normal = np.array((-1, 1 - 2 / max(aspect, 1), 1, 1))
         map_rect_normal01 = (map_rect_normal + 1) * 0.5
         map_rect = np.array((
-            map_rect_normal01[0] * framebuffer_size[0],
-            map_rect_normal01[1] * framebuffer_size[1],
-            map_rect_normal01[2] * framebuffer_size[0],
-            map_rect_normal01[3] * framebuffer_size[1]
+            map_rect_normal01[0] * frame_size[0],
+            map_rect_normal01[1] * frame_size[1],
+            map_rect_normal01[2] * frame_size[0],
+            map_rect_normal01[3] * frame_size[1]
         ))
         map_rect_size = map_rect[2:4] - map_rect[0:2]
         mouse = np.array((
             self.io.mouse_pos[0],
-            framebuffer_size[1] - self.io.mouse_pos[1]
+            frame_size[1] - self.io.mouse_pos[1]
         ))
         G.mouse_in_map_normal01 = (mouse - map_rect[:2]) / map_rect_size
 
@@ -114,7 +115,11 @@ class WorldViewer(object):
         self.show_tooltip()
         if G.gui_show_help_overlay:
             self.show_help_overlay()
-        self.world_renderer.draw(map_rect_normal, framebuffer_size, glfw.get_time())
+
+        G.renderer_params.frame_size = frame_size
+        G.renderer_params.rect = map_rect_normal
+        G.renderer_params.time_in_seconds = glfw.get_time()
+        self.world_renderer.draw(G.renderer_params)
 
         # imgui.show_test_window()
         # self.show_debug_window()
@@ -122,8 +127,9 @@ class WorldViewer(object):
         imgui.render()
 
     def show_map_controller_window(self):
-        imgui.set_next_window_position(0, G.framebuffer_size[0])
-        imgui.set_next_window_size(G.framebuffer_size[0], G.framebuffer_size[1] - G.framebuffer_size[0])
+        imgui.set_next_window_position(0, G.renderer_params.frame_size[0])
+        imgui.set_next_window_size(G.renderer_params.frame_size[0],
+                                   G.renderer_params.frame_size[1] - G.renderer_params.frame_size[0])
 
         if imgui.begin("Map", closable=False, flags=imgui.WINDOW_NO_RESIZE |
                                                     imgui.WINDOW_NO_MOVE |
@@ -153,7 +159,7 @@ class WorldViewer(object):
 
                 imgui.separator()
 
-            _, self.world_renderer.config.showGrid = imgui.checkbox("Grid", self.world_renderer.config.showGrid)
+            _, G.renderer_params.showGrid = imgui.checkbox("Grid", G.renderer_params.showGrid)
 
             imgui.separator()
             if imgui.tree_node("World Info", flags=imgui.TREE_NODE_DEFAULT_OPEN):
@@ -182,7 +188,7 @@ class WorldViewer(object):
         if self.world is None or self.view is None:
             return
         mouse = self.io.mouse_pos
-        if 0 <= mouse.x <= G.framebuffer_size[0] and 0 <= mouse.y <= G.framebuffer_size[0]:
+        if 0 <= mouse.x <= G.renderer_params.frame_size[0] and 0 <= mouse.y <= G.renderer_params.frame_size[0]:
             region_coord, tile_coord = self.view.get_location(G.mouse_in_map_normal01)
 
             imgui.begin_tooltip()
@@ -296,9 +302,9 @@ def main():
         if G.minimized:  # do not render zero sized frame
             continue
         impl.process_inputs()
-        framebuffer_size = glfw.get_framebuffer_size(window)
-        gl.glViewport(0, 0, framebuffer_size[0], framebuffer_size[1])
-        viewer.render(framebuffer_size)
+        frame_size = np.array(glfw.get_framebuffer_size(window))
+        gl.glViewport(0, 0, frame_size[0], frame_size[1])
+        viewer.render(frame_size)
         glfw.swap_buffers(window)
     impl.shutdown()
     imgui.shutdown()

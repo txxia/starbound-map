@@ -3,4 +3,4 @@ venv/
 dist/
 build/
 *.ini
-_*/
+_*

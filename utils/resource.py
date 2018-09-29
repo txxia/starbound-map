@@ -3,7 +3,7 @@ import os
 import sys
 
 
-def asset_path(relative_path):
+def asset_path(relative_path: str) -> str:
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
