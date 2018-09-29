@@ -256,17 +256,16 @@ def impl_glfw_init():
     width, height = 400, 600
     window_name = "Starbound World Viewer"
 
-    logging.info("GLFW version: %s", glfw.get_version_string())
+    logging.info("GLFW ver: %s", glfw.get_version_string())
 
     if not glfw.init():
         logging.fatal("Could not initialize OpenGL context")
         exit(1)
 
     # OS X supports only forward-compatible core profiles from 3.2
-    glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
+    glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
     glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-
     glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, gl.GL_TRUE)
 
     # Create a windowed mode window and its OpenGL context
@@ -280,6 +279,9 @@ def impl_glfw_init():
         glfw.terminate()
         logging.fatal("Could not initialize Window")
         exit(1)
+
+    logging.info("OpenGL ver: %s", gl.glGetString(gl.GL_VERSION))
+    logging.info("GLSL ver: %s", gl.glGetString(gl.GL_SHADING_LANGUAGE_VERSION))
 
     glfw.set_window_aspect_ratio(window, 2, 3)
     return window
