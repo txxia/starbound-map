@@ -1,6 +1,11 @@
 # Do not build on tags (GitHub and BitBucket)
 skip_tags: true
 
+branches:
+  only:
+  - master
+  - dev
+
 environment:
   matrix:
   - PYTHON: "C:\\Python37"
@@ -18,8 +23,10 @@ before_build:
 - venv\Scripts\activate
 - python -c "import sys; print(sys.executable)"
 - pip install -r requirements.txt
+- pip install -r requirements_dev.txt
 
 build_script:
+- pytest --cov --cov-report=term --cov-report=html
 - pip install pyinstaller
 - pyinstaller mapviewer.spec
 

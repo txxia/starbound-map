@@ -1,0 +1,15 @@
+[run]
+branch = True
+source =
+    map
+    utils
+    starbound
+omit =
+    venv/*
+    starbound/data/*
+
+[html]
+directory = dist/coverage/html
+
+[xml]
+output = dist/coverage/report.xml
