@@ -26,7 +26,7 @@ before_build:
 - pip install -r requirements_dev.txt
 
 build_script:
-- pytest --cov --cov-report=term --cov-report=html
+- python -m pytest
 - pip install pyinstaller
 - pyinstaller mapviewer.spec
 
