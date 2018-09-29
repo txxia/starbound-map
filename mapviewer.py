@@ -3,7 +3,8 @@ import logging
 import os
 
 if 'PYGLFW_LIBRARY' not in os.environ:
-    os.environ['PYGLFW_LIBRARY'] = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'glfw3.dll')
+    os.environ['PYGLFW_LIBRARY'] = os.path.join(
+        os.path.abspath(os.path.dirname(__file__)), 'glfw3.dll')
 
 import OpenGL.GL as gl
 import numpy as np
@@ -55,11 +56,6 @@ class WorldViewer(object):
         self.world_size = np.zeros(2, dtype=np.int)
         self.world_size_in_regions = np.zeros(2, dtype=np.int)
 
-        # TODO this implementation caps at 9x9 grid, may need to look into alternatives
-        '''
-        https://www.khronos.org/opengl/wiki/Array_Texture + gl.glTexSubImage1Dui
-        https://www.reddit.com/r/opengl/comments/4u8qyv/opengl_limited_number_of_textures_how_can_you/
-        '''
         self.grid_dim = 7
         self.view = None
         self.world_renderer = WorldRenderer(self.view, grid_dim=self.grid_dim)
@@ -77,15 +73,21 @@ class WorldViewer(object):
             self.world = None
             self.world_coord = None
         if self.world is not None:
-            self.player_start = np.array(self.world.metadata['playerStart'], dtype=np.int)
-            self.world_size = np.array((self.world.width, self.world.height), dtype=np.int)
-            self.world_size_in_regions = np.ceil(self.world_size / REGION_DIM).astype(np.int)
+            self.player_start = np.array(self.world.metadata['playerStart'],
+                                         dtype=np.int)
+            self.world_size = np.array((self.world.width, self.world.height),
+                                       dtype=np.int)
+            self.world_size_in_regions = np.ceil(
+                self.world_size / REGION_DIM).astype(np.int)
 
-            logging.info('World size in regions: {}'.format(self.world_size_in_regions))
-            center_region = np.floor(self.player_start / REGION_DIM).astype(np.int)
-            self.world_renderer.view = self.view = WorldView(self.world,
-                                                             center_region=center_region,
-                                                             grid_dim=self.grid_dim)
+            logging.info(
+                'World size in regions: {}'.format(self.world_size_in_regions))
+            center_region = np.floor(self.player_start / REGION_DIM).astype(
+                np.int)
+            self.world_renderer.view = self.view = WorldView(
+                self.world,
+                center_region=center_region,
+                grid_dim=self.grid_dim)
         else:
             self.world_renderer.view = self.view = None
 
@@ -95,20 +97,15 @@ class WorldViewer(object):
         """
         aspect = float(frame_size[1]) / frame_size[0]
 
-        map_rect_normal = np.array((-1, 1 - 2 / max(aspect, 1), 1, 1))
+        map_rect_normal = np.array(((-1, 1 - 2 / max(aspect, 1)), (1, 1)))
         map_rect_normal01 = (map_rect_normal + 1) * 0.5
-        map_rect = np.array((
-            map_rect_normal01[0] * frame_size[0],
-            map_rect_normal01[1] * frame_size[1],
-            map_rect_normal01[2] * frame_size[0],
-            map_rect_normal01[3] * frame_size[1]
-        ))
-        map_rect_size = map_rect[2:4] - map_rect[0:2]
+        map_rect = map_rect_normal01 * frame_size
+        map_rect_size = map_rect[1] - map_rect[0]
         mouse = np.array((
             self.io.mouse_pos[0],
             frame_size[1] - self.io.mouse_pos[1]
         ))
-        G.mouse_in_map_normal01 = (mouse - map_rect[:2]) / map_rect_size
+        G.mouse_in_map_normal01 = (mouse - map_rect[0]) / map_rect_size
 
         imgui.new_frame()
         self.show_map_controller_window()
@@ -129,7 +126,8 @@ class WorldViewer(object):
     def show_map_controller_window(self):
         imgui.set_next_window_position(0, G.renderer_params.frame_size[0])
         imgui.set_next_window_size(G.renderer_params.frame_size[0],
-                                   G.renderer_params.frame_size[1] - G.renderer_params.frame_size[0])
+                                   G.renderer_params.frame_size[1] -
+                                   G.renderer_params.frame_size[0])
 
         if imgui.begin("Map", closable=False, flags=imgui.WINDOW_NO_RESIZE |
                                                     imgui.WINDOW_NO_MOVE |
@@ -137,35 +135,44 @@ class WorldViewer(object):
                                                     imgui.WINDOW_NO_TITLE_BAR):
             if self.view is not None:
                 center_x, center_y = self.view.center_region
-                if imgui.button("<") or self.get_keys_on_map(glfw.KEY_A, glfw.KEY_LEFT):
+                if imgui.button("<") or self.get_keys_on_map(glfw.KEY_A,
+                                                             glfw.KEY_LEFT):
                     center_x = max(center_x - 1, 1)
                 imgui.same_line()
-                if imgui.button(">") or self.get_keys_on_map(glfw.KEY_D, glfw.KEY_RIGHT):
+                if imgui.button(">") or self.get_keys_on_map(glfw.KEY_D,
+                                                             glfw.KEY_RIGHT):
                     center_x = min(center_x + 1, self.world_size_in_regions[0])
                 imgui.same_line()
                 _, center_x = imgui.slider_int("X", center_x,
                                                min_value=1,
-                                               max_value=self.world_size_in_regions[0])
-                if imgui.button("^") or self.get_keys_on_map(glfw.KEY_W, glfw.KEY_UP):
+                                               max_value=
+                                               self.world_size_in_regions[0])
+                if imgui.button("^") or self.get_keys_on_map(glfw.KEY_W,
+                                                             glfw.KEY_UP):
                     center_y = min(center_y + 1, self.world_size_in_regions[1])
                 imgui.same_line()
-                if imgui.button("v") or self.get_keys_on_map(glfw.KEY_S, glfw.KEY_DOWN):
+                if imgui.button("v") or self.get_keys_on_map(glfw.KEY_S,
+                                                             glfw.KEY_DOWN):
                     center_y = max(center_y - 1, 1)
                 imgui.same_line()
                 _, center_y = imgui.slider_int("Y", center_y,
                                                min_value=1,
-                                               max_value=self.world_size_in_regions[1])
+                                               max_value=
+                                               self.world_size_in_regions[1])
                 self.view.center_region = np.array((center_x, center_y))
 
                 imgui.separator()
 
-            _, G.renderer_params.showGrid = imgui.checkbox("Grid", G.renderer_params.showGrid)
+            _, G.renderer_params.showGrid = imgui.checkbox("Grid",
+                                                           G.renderer_params.showGrid)
 
             imgui.separator()
-            if imgui.tree_node("World Info", flags=imgui.TREE_NODE_DEFAULT_OPEN):
+            if imgui.tree_node("World Info",
+                               flags=imgui.TREE_NODE_DEFAULT_OPEN):
                 if self.world is not None:
                     imgui.label_text('Coordinates', self.world_coord)
-                    imgui.label_text('Size', str(np.array((self.world.width, self.world.height))))
+                    imgui.label_text('Size', str(
+                        np.array((self.world.width, self.world.height))))
                     imgui.label_text('PlayerStart', str(self.player_start))
                 else:
                     imgui.text('Select a world to start')
@@ -180,7 +187,8 @@ class WorldViewer(object):
                 imgui.open_popup(POPUP_SELECT_WORLD)
             self.popup_select_world()
             imgui.same_line()
-            _, G.gui_show_help_overlay = imgui.checkbox("Usage", G.gui_show_help_overlay)
+            _, G.gui_show_help_overlay = imgui.checkbox("Usage",
+                                                        G.gui_show_help_overlay)
 
             imgui.end()
 
@@ -188,8 +196,10 @@ class WorldViewer(object):
         if self.world is None or self.view is None:
             return
         mouse = self.io.mouse_pos
-        if 0 <= mouse.x <= G.renderer_params.frame_size[0] and 0 <= mouse.y <= G.renderer_params.frame_size[0]:
-            region_coord, tile_coord = self.view.get_location(G.mouse_in_map_normal01)
+        if 0 <= mouse.x <= G.renderer_params.frame_size[0] and 0 <= mouse.y <= \
+                G.renderer_params.frame_size[0]:
+            region_coord, tile_coord = self.view.get_location(
+                G.mouse_in_map_normal01)
 
             imgui.begin_tooltip()
             imgui.push_item_width(60)
@@ -211,15 +221,18 @@ class WorldViewer(object):
                              imgui.WINDOW_NO_INPUTS):
             imgui.text("Usage")
             imgui.separator()
-            imgui.bullet_text("Navigate with WASD/arrow-keys (click on the map first)")
+            imgui.bullet_text(
+                "Navigate with WASD/arrow-keys (click on the map first)")
             # TODO imgui.bullet_text("Right-click on a tile to see details")
             imgui.end()
 
     def popup_settings(self):
-        if imgui.begin_popup_modal(POPUP_SETTINGS, flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
-            changed, self.config[CONFIG_GAME_ROOT] = imgui.input_text("Game Root",
-                                                                      self.config.get(CONFIG_GAME_ROOT, ''),
-                                                                      255)
+        if imgui.begin_popup_modal(POPUP_SETTINGS,
+                                   flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE)[0]:
+            changed, self.config[CONFIG_GAME_ROOT] = imgui.input_text(
+                "Game Root",
+                self.config.get(CONFIG_GAME_ROOT, ''),
+                255)
             G.gui_config_changed |= changed
 
             imgui.separator()
@@ -243,7 +256,8 @@ class WorldViewer(object):
     def show_debug_window(self):
         imgui.label_text("time", '{:.1f}'.format(glfw.get_time()))
         imgui.label_text("fps", '{:.1f}'.format(self.io.framerate))
-        imgui.label_text("mouse", '{:.1f}, {:.1f}'.format(self.io.mouse_pos.x, self.io.mouse_pos.y))
+        imgui.label_text("mouse", '{:.1f}, {:.1f}'.format(self.io.mouse_pos.x,
+                                                          self.io.mouse_pos.y))
         imgui.label_text('mouse in map', str(G.mouse_in_map_normal01))
 
     def get_keys_on_map(self, *keys):
@@ -279,7 +293,9 @@ def impl_glfw_init():
         int(width), int(height), window_name, None, None
     )
     glfw.make_context_current(window)
-    glfw.set_window_iconify_callback(window, lambda _, minimized: G.on_minimization_event(minimized))
+    glfw.set_window_iconify_callback(window, lambda _,
+                                                    minimized: G.on_minimization_event(
+        minimized))
 
     if not window:
         glfw.terminate()
@@ -312,5 +328,7 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(format='%(pathname)s:%(lineno)d:\n%(levelname)7s | %(message)s ', level=logging.DEBUG)
+    logging.basicConfig(
+        format='%(pathname)s:%(lineno)d:\n%(levelname)7s | %(message)s ',
+        level=logging.DEBUG)
     main()

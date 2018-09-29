@@ -72,8 +72,9 @@ class RenderParameters:
     frame_size: np.array = dc.field(default_factory=lambda: np.zeros(2))
     """size of the framebuffer"""
     showGrid: bool = True
-    rect: np.array = dc.field(default_factory=lambda: np.array([-1, -1, 1, 1]))
-    """(min_x, min_y, max_x, max_y) representing region in [-1, +1]^2 to draw the map"""
+    rect: np.ndarray = dc.field(
+        default_factory=lambda: np.array([[-1, -1], [1, 1]]))
+    """(min, max) representing region in [-1, +1]^2 to draw the map"""
     time_in_seconds: float = 0
     """time since the application started"""
 
@@ -204,14 +205,11 @@ class WorldRenderer:
             gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_RGBA32UI, tbo)
 
         # Uniforms
-        rect_resolution = (
-            params.frame_size[0] * ((params.rect[2] - params.rect[0]) / 2),
-            params.frame_size[1] * ((params.rect[3] - params.rect[1]) / 2)
-        )
+        rect_size = params.rect[1] - params.rect[0]
+        rect_resolution = params.frame_size * rect_size / 2
         # Compute fragment projection from window space to rect space [-1,1]^2
-        rect01 = tuple((r + 1) * 0.5 for r in params.rect)
-        rect_in_frag_space = tuple(
-            r * params.frame_size[i % 2] for i, r in enumerate(rect01))
+        rect01 = (params.rect + 1) * 0.5
+        rect_in_frag_space = rect01 * params.frame_size
         frag_projection = _project_rect(rect_in_frag_space).astype(np.float32)
 
         gl.glUniform2f(gl.glGetUniformLocation(target.program, "iResolution"),
@@ -234,12 +232,12 @@ class WorldRenderer:
         gl.glBindVertexArray(target.vao)
 
         # quad
-        state.vertices[QUAD_VERTS_BL][:] = params.rect[:2]  # min_x, min_y
+        state.vertices[QUAD_VERTS_BL][:] = params.rect[0]  # min_x, min_y
         state.vertices[QUAD_VERTS_BR][:] = (
-            params.rect[2], params.rect[1])  # max_x, min_y
-        state.vertices[QUAD_VERTS_TR][:] = params.rect[2:]  # max_x, max_y
+            params.rect[1][0], params.rect[0][1])  # max_x, min_y
+        state.vertices[QUAD_VERTS_TR][:] = params.rect[1]  # max_x, max_y
         state.vertices[QUAD_VERTS_TL][:] = (
-            params.rect[0], params.rect[3])  # min_x, max_y
+            params.rect[0][0], params.rect[1][1])  # min_x, max_y
         gl.glBufferSubData(gl.GL_ARRAY_BUFFER,
                            offset=0,
                            size=state.vertices.nbytes,
@@ -269,46 +267,24 @@ class WorldRenderer:
         gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, 0)
 
 
-def _project_rect(rect: tp.Sequence[float]) -> np.ndarray:
+def _project_rect(rect: np.ndarray) -> np.ndarray:
     """
     Returns projection from a rect in window space ([0,w], [0,h]) to [0,1]^2
-    :param rect: (min_x, min_y, max_x, max_y)
+    :param rect: ((min_x, min_y), (max_x, max_y))
     :return: 3x3 projection matrix
-
-    >>> _project_rect([0, 0, 10, 20]) # scaling only
-    array([[0.1 , 0.  , 0.  ],
-           [0.  , 0.05, 0.  ],
-           [0.  , 0.  , 1.  ]])
-    >>> _project_rect([3, 4, 4, 5])   # translation only
-    array([[ 1.,  0., -3.],
-           [ 0.,  1., -4.],
-           [ 0.,  0.,  1.]])
-    >>> _project_rect([0, 6, 10, 16]) # translation + scaling
-    array([[ 0.1,  0. ,  0. ],
-           [ 0. ,  0.1, -0.6],
-           [ 0. ,  0. ,  1. ]])
-    >>> np.matmul(_project_rect([0, 6, 10, 16]), [5, 11, 1])  # projecting the center of the rect
-    array([0.5, 0.5, 1. ])
     """
-    rw = rect[2] - rect[0]
-    rh = rect[3] - rect[1]
+    size = rect[1] - rect[0]
     # translate to origin
     translation = [
-        [1, 0, -rect[0]],
-        [0, 1, -rect[1]],
+        [1, 0, -rect[0][0]],
+        [0, 1, -rect[0][1]],
         [0, 0, 1]
     ]
     # scale down
     scaling = [
-        [1 / rw, 0, 0],
-        [0, 1 / rh, 0],
+        [1 / size[0], 0, 0],
+        [0, 1 / size[1], 0],
         [0, 0, 1]
     ]
     proj = np.matmul(scaling, translation)
     return proj
-
-
-if __name__ == '__main__':
-    import doctest
-
-    doctest.testmod()

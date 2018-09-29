@@ -25,6 +25,9 @@ before_build:
 - pip install -r requirements.txt
 - pip install -r requirements_dev.txt
 
+build_script:
+- python -c "print('dummy build stage to disable MSBuild')"
+
 test_script:
 - python -m pytest
 
@@ -33,10 +36,8 @@ before_deploy:
 - pyinstaller mapviewer.spec
 
 artifacts:
-- path: 'dist\*.exe'
-  name: Executable
-- path: 'dist\coverage\**'
-  name: Coverage Report
+- path: 'dist/*.exe'
+- path: 'dist/coverage/html/*'
 
 deploy:
 - provider: GitHub
