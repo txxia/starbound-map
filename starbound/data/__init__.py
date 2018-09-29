@@ -6,9 +6,8 @@ import struct
 import zlib
 from collections import namedtuple
 
-import starbound.data.sbon
-from starbound.data.btreedb5 import BTreeDB5
-from starbound.data.sbasset6 import SBAsset6
+from .btreedb5 import BTreeDB5
+from .sbasset6 import SBAsset6
 
 # Override range with xrange when running Python 2.x.
 try:
