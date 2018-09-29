@@ -3,37 +3,37 @@ skip_tags: true
 
 environment:
   matrix:
-    - PYTHON: "C:\\Python35"
-      PYTHON_VERSION: "3.5.x"
-      PYTHON_ARCH: "32"
+  - PYTHON: "C:\\Python37"
+    PYTHON_VERSION: "3.7.x"
+    PYTHON_ARCH: "32"
 init:
-  - "SET PATH=%PYTHON%;%PATH%"
+- "SET PATH=%PYTHON%;%PATH%"
 
-  - python -V
-  - "%PYTHON%\\Scripts\\pip.exe install --upgrade pip"
-  - "%PYTHON%\\Scripts\\pip.exe install --upgrade setuptools wheel virtualenv"
+- python -V
+- "%PYTHON%\\Scripts\\pip.exe install --upgrade pip"
+- "%PYTHON%\\Scripts\\pip.exe install --upgrade setuptools wheel virtualenv"
 
 before_build:
-  - python -m virtualenv venv
-  - venv\Scripts\activate
-  - python -c "import sys; print(sys.executable)"
-  - pip install -r requirements.txt
+- python -m virtualenv venv
+- venv\Scripts\activate
+- python -c "import sys; print(sys.executable)"
+- pip install -r requirements.txt
 
 build_script:
-  - pip install pyinstaller
-  - pyinstaller mapviewer.spec
+- pip install pyinstaller
+- pyinstaller mapviewer.spec
 
 artifacts:
-  - path: 'dist\*'
+- path: 'dist\*'
 
 deploy:
-  - provider: GitHub
-    release: v$(appveyor_build_version)
-    description: Build v$(appveyor_build_version)
-    auth_token:
-      secure: aEuceXtTw4tyxWydRznIxKqzxFIkZAFriOlmvvjYFsmP57I/0uWNWCZc2GcRylOa
-    artifact: dist\StarboundMapViewer.exe
-    draft: false
-    on:
-      branch: master
-      appveyor_repo_tag: false
+- provider: GitHub
+  release: v$(appveyor_build_version)
+  description: Build v$(appveyor_build_version)
+  auth_token:
+    secure: aEuceXtTw4tyxWydRznIxKqzxFIkZAFriOlmvvjYFsmP57I/0uWNWCZc2GcRylOa
+  artifact: dist\StarboundMapViewer.exe
+  draft: false
+  on:
+    branch: master
+    appveyor_repo_tag: false
