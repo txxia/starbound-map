@@ -16,7 +16,10 @@ class WorldView:
     Represents a view to the world map.
     """
 
-    def __init__(self, world: World, center_region: np.ndarray, grid_dim: int = 5):
+    def __init__(self,
+                 world: World,
+                 center_region: np.ndarray,
+                 grid_dim: int = 5):
         """
         :param world: starbound world
         :param center_region: center tile coordinate of the view
@@ -30,7 +33,8 @@ class WorldView:
         self._grid_dim = None
         self.grid_dim = grid_dim
 
-        self._region_grid = [[None for _ in range(grid_dim)] for _ in range(grid_dim)]
+        self._region_grid = [[None for _ in range(grid_dim)]
+                             for _ in range(grid_dim)]
 
         self._center_region = np.zeros(2)
         self.center_region = center_region
@@ -68,14 +72,18 @@ class WorldView:
     def on_region_updated(self, callback):
         self._on_region_updated.append(callback)
 
-    def get_location(self, coord01: np.ndarray):
+    def get_location(self, coord01: np.ndarray) \
+            -> tp.Tuple[np.ndarray, np.ndarray]:
         """
         Find the location indicated by the given coordinate in the current view
         :param coord01: coordinate in the current view
         :return: (region_coord, tile_coord)
         """
-        region_coord = self.center_region - self.grid_dim // 2 + (coord01 * self.grid_dim).astype(np.int)
-        tile_coord = (coord01 % (1 / self.grid_dim) * self.grid_dim * REGION_DIM).astype(np.int)
+        region_coord = self.center_region - \
+                       self.grid_dim // 2 + \
+                       (coord01 * self.grid_dim).astype(np.int)
+        tile_coord = ((coord01 % (1 / self.grid_dim)) *
+                      self.grid_dim * REGION_DIM).astype(np.int)
         return region_coord, tile_coord
 
     @cache.memoized_method(maxsize=1024)
@@ -94,7 +102,8 @@ class WorldView:
         Updates the grid of size grid_dim^2 containing regions centered at the current view.
         """
         # FIXME handle wrapping around
-        # Retrieve visible regions as a grid, each item is a byte array of 1024 tiles (31 bytes per tile)
+        # Retrieve visible regions as a grid,
+        # each item is a byte array of 1024 tiles (31 bytes per tile)
         for y in range(self.grid_dim):
             ry = self.center_region[1] + y - 1
             for x in range(self.grid_dim):
