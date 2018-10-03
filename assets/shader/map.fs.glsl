@@ -2,6 +2,7 @@
 
 // Config
 #define GRID_INTENSITY 0.0001
+#define INVALID_REGION_STRIP_SPEED 10.0
 // #define DEBUG_TILE_ID
 // #define DEBUG_REGION_ID
 
@@ -16,6 +17,8 @@
 #define HUE8(u8) (FDIV(u8, 360))
 
 // Constants
+#define BLACK (vec3(0.0))
+
 #define GRID_DIM 7
 #define GRID_DIM_INV FDIV(1, GRID_DIM)
 #define REGION_COUNT (GRID_DIM*GRID_DIM)
@@ -31,6 +34,7 @@
 #define VAR(u) ((u) & 0xFU)
 
 #define COLL(u) (((u) >> 8) & 0xFFU)
+#define COLL_UNKNOWN    0U
 #define COLL_EMPTY      1U
 #define COLL_PLATFORM   2U
 #define COLL_DYNAMIC    3U
@@ -39,14 +43,13 @@
 uniform vec2 iResolution;
 uniform float iTime;
 uniform mat3 iFragProjection;
-uniform bool iRegionValid[REGION_COUNT];
 uniform struct Config {
     bool showGrid;
 } iConfig;
 
 struct Tile {
     uint fg_mat2_hue_var;
-    uint fg_mod2_hueShift;
+    uint fg_mod2_hueShift_validity;
     uint bg_mat2_hue_var;
     uint bg_mod2_hueShift;
     uint liquidLevel;
@@ -62,6 +65,8 @@ layout(std430, binding = 1) buffer World {
 };
 
 out vec4 outputColor;
+
+///////////////////////////////////////////////////////////////////////////////
 
 // http://lolengine.net/blog/2013/07/27/rgb-to-hsv-in-glsl
 vec3 rgb2hsv(vec3 c)
@@ -80,6 +85,17 @@ vec3 hsv2rgb(vec3 c) {
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+bool Tile_valid(in Tile tile){ return (tile.fg_mod2_hueShift_validity & 0xF) != 0U; }
+uint Tile_fgMat(in Tile tile){ return MAT(tile.fg_mat2_hue_var); }
+uint Tile_bgMat(in Tile tile){ return MAT(tile.bg_mat2_hue_var); }
+float Tile_fgHue(in Tile tile){ return HUE(tile.fg_mat2_hue_var); }
+float Tile_bgHue(in Tile tile){ return HUE(tile.bg_mat2_hue_var); }
+uint Tile_collision(in Tile tile){ return COLL(tile.liquid_collision_dungeon2); }
+
+///////////////////////////////////////////////////////////////////////////////
+
 // Get the linear tile id in a region, given its 2D coordinate.
 int getTileId(in vec2 normalCoord01){
     // transform to [0..REGION_DIM]^2
@@ -97,22 +113,35 @@ void getTile(in int regionId, in int tileId, inout Tile tile) {
     tile = gRegions[regionId].tiles[tileId];
 }
 
-vec3 invalidRegionColor(in vec2 normalCoord01){
-    return vec3(0.0, 0.5, 0.7) * sqrt(sin(normalCoord01.y * iResolution.y));
+vec3 unknownRegionColor(in vec2 normalCoord01){
+    float timeOffset = iTime * INVALID_REGION_STRIP_SPEED;
+    float pixel = normalCoord01.x * iResolution.x + normalCoord01.y * iResolution.y;
+    return vec3(0.5) * (sin(pixel + timeOffset) + 1) * 0.5;
 }
 
-vec3 tileColor(in int regionId, in int tileId) {
+vec3 tileColor(in int regionId, in int tileId, in vec2 normalCoord01) {
     Tile tile;
     getTile(regionId, tileId, tile);
-    float fgHueShift01 = HUE(tile.fg_mat2_hue_var);
-    float bgHueShift01 = HUE(tile.bg_mat2_hue_var);
-    float coll = float(COLL(tile.liquid_collision_dungeon2) != COLL_EMPTY);
+    float fgHueShift01 = Tile_fgHue(tile);
+    float bgHueShift01 = Tile_bgHue(tile);
+    uint coll = Tile_collision(tile);
+    bool validTile = Tile_valid(tile);
 
-    return mix(
-        hsv2rgb(vec3(bgHueShift01, 1.0, 0.2)),
-        hsv2rgb(vec3(fgHueShift01, 1.0, coll)),
-        coll
-    );
+    bool knownTile = coll != COLL_UNKNOWN;
+    float collision = float(coll != COLL_EMPTY);
+    vec3 unknownColor = unknownRegionColor(normalCoord01);
+    vec3 color;
+    if (validTile){
+        color = mix(
+            hsv2rgb(vec3(bgHueShift01, 1.0, 0.2)),
+            hsv2rgb(vec3(fgHueShift01, 1.0, collision)),
+            collision
+        );
+    } else {
+        color = BLACK;
+    }
+
+    return mix(unknownColor, color, max(0.5, round(float(knownTile))));
 }
 
 vec3 gridColor(in vec2 normalCoord01) {
@@ -130,21 +159,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord){
     vec3 pixel;
 
     int regionId = getRegionId(r01);
-    if (iRegionValid[regionId]) {
-        vec2 regionCoord01 = mod(r01, GRID_DIM_INV) * GRID_DIM;
-        int tileId = getTileId(regionCoord01);
-        pixel = tileColor(regionId, tileId);
+    vec2 regionCoord01 = mod(r01, GRID_DIM_INV) * GRID_DIM;
+    int tileId = getTileId(regionCoord01);
+    pixel = tileColor(regionId, tileId, r01);
 
-        #ifdef DEBUG_TILE_ID
-        pixel = vec3(
-            FDIV(mod(tileId, REGION_DIM), REGION_DIM),
-            FDIV(FDIV(tileId, REGION_DIM), REGION_DIM),
-            0.0
-        );
-        #endif
-    } else {
-        pixel = invalidRegionColor(r01);
-    }
+    #ifdef DEBUG_TILE_ID
+    pixel = vec3(
+        FDIV(mod(tileId, REGION_DIM), REGION_DIM),
+        FDIV(FDIV(tileId, REGION_DIM), REGION_DIM),
+        0.0
+    );
+    #endif
     if (iConfig.showGrid){
         pixel += gridColor(r01);
     }

@@ -26,7 +26,7 @@ REGION_X = 1
 REGION_Y = 2
 
 PADDED_TILE_DATA = b'\
-\xff\xff\x00\x00\xff\xff\x00\x00\
+\xff\xff\x00\x00\xff\xff\x00\x01\
 \x03\x00\x00\xff\xff\x00\x00\x00\
 \x00\x00\x00\x00\x00\x00\x00\x00\
 \x01\xff\xff\x11\x10\x00\x00\xff'
@@ -75,13 +75,13 @@ class TestTile(TestCase):
 
         assert 16 == self.tile.biome
         assert 0 == self.tile.biome_2
-        assert False == self.tile.indestructible
+        assert not self.tile.indestructible
 
-        assert not self.tile.is_null
+        assert self.tile.is_valid
 
-    def test_is_null__true(self):
-        null_tile = model.Tile(model.NULL_TILE)
-        assert null_tile.is_null
+    def test_is_valid__true(self):
+        invalid_tile = model.Tile(model.NULL_TILE)
+        assert not invalid_tile.is_valid
 
 
 class TestWorld(TestCase):
@@ -123,7 +123,7 @@ class TestWorld(TestCase):
         self.mock_dao.get_raw_tiles.assert_called_once_with(REGION_X, REGION_Y)
 
         assert model.TILES_PER_REGION == len(region_tiles)
-        assert all(t.is_null for t in region_tiles)
+        assert not any(t.is_valid for t in region_tiles)
 
     def test_get_tile(self):
         # set up a special tile at (1, 0) of the given region
@@ -135,8 +135,10 @@ class TestWorld(TestCase):
                     model.UNPADDED_TILE_SIZE * 2] = NULL_TILE_DATA
         self.mock_dao.get_raw_tiles.return_value = bytes(region_data)
 
-        assert PADDED_TILE_DATA == self.world.get_tile(*regular_tile_id).bytes
-        assert self.world.get_tile(*null_tile_id).is_null
+        regular_tile = self.world.get_tile(*regular_tile_id)
+        null_tile = self.world.get_tile(*null_tile_id)
+        assert PADDED_TILE_DATA == regular_tile.bytes
+        assert PADDED_TILE_DATA != null_tile
 
         self.mock_dao.get_raw_tiles.assert_called_once_with(REGION_X, REGION_Y)
 

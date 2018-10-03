@@ -16,7 +16,7 @@ TILES_PER_REGION = REGION_DIM * REGION_DIM
 UNPADDED_TILE_SIZE = 31
 PADDING_BYTE_INDEX = 7
 RAW_TILE_SIZE = 32
-RAW_TILE_STRUCT = struct.Struct('> hBB hBx hBB hBB f f BBH BB? x')
+RAW_TILE_STRUCT = struct.Struct('> hBB hB? hBB hBB f f BBH BB? x')
 _RawTile = namedtuple('RawTile', [
     'foreground_material',  # short 2
     'foreground_hue_shift',  # uchar 1
@@ -24,7 +24,7 @@ _RawTile = namedtuple('RawTile', [
 
     'foreground_mod',  # short 2
     'foreground_mod_hue_shift',  # uchar 1
-    # unused uchar 1
+    'is_valid',  # (padded) bool 1
 
     'background_material',  # short 2
     'background_hue_shift',  # uchar 1
@@ -49,11 +49,13 @@ _RawTile = namedtuple('RawTile', [
 ])
 
 REGION_SIZE = TILES_PER_REGION * RAW_TILE_SIZE
+VALID_TILE_PADDING = b'\1'
 NULL_TILE = b'\0' * RAW_TILE_SIZE
 NULL_REGION = NULL_TILE * TILES_PER_REGION
 
 
 class Tile(_RawTile):
+
     def __new__(cls, data: bytes, *args, **kwargs):
         assert type(data) == bytes
         assert len(data) == RAW_TILE_SIZE
@@ -68,10 +70,6 @@ class Tile(_RawTile):
     @property
     def bytes(self) -> bytes:
         return self._data
-
-    @property
-    def is_null(self) -> bool:
-        return self._data == NULL_TILE
 
 
 class World:
@@ -136,22 +134,27 @@ class World:
             unpadded_region = self.__dao.get_raw_tiles(rx, ry)
             return self._pad_region(unpadded_region,
                                     tile_size=UNPADDED_TILE_SIZE,
-                                    offset=PADDING_BYTE_INDEX)
+                                    offset=PADDING_BYTE_INDEX,
+                                    pad_value=VALID_TILE_PADDING)
         except KeyError or RuntimeError:
             return NULL_REGION
 
     # TODO optimize this
     @staticmethod
-    def _pad_region(region_data: bytes, *, tile_size: int,
-                    offset: int) -> bytes:
+    def _pad_region(region_data: bytes, *,
+                    tile_size: int,
+                    offset: int,
+                    pad_value: bytes = b'\0') -> bytes:
         """
-        Insert padding to the `offset`th (zero-based) byte of every tile
+        Insert padding `pad_value` to the `offset`th (zero-based) byte
+        of every tile.
         """
         assert len(region_data) % tile_size == 0
         assert tile_size >= offset
+        assert len(pad_value) == 1
         tile_count = len(region_data) // tile_size
         new_tile_size = tile_size + 1
-        padded_region = bytearray(b'\0' * tile_count * new_tile_size)
+        padded_region = bytearray(pad_value * tile_count * new_tile_size)
         for i in range(tile_count):
             base = i * new_tile_size
             r = base - i

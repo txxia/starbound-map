@@ -41,7 +41,6 @@ class RenderDimension:
 class RenderState:
     dimension: RenderDimension
     vertices: np.array
-    region_validity: tp.List[bool]
 
 
 @dc.dataclass(frozen=True)
@@ -133,7 +132,6 @@ def init_state(dimension: RenderDimension) -> RenderState:
     return RenderState(
         dimension=dimension,
         vertices=np.copy(QUAD_VERTS),
-        region_validity=[True] * dimension.region_count
     )
 
 
@@ -207,9 +205,6 @@ class WorldRenderer:
         gl.glUniformMatrix3fv(
             gl.glGetUniformLocation(target.program, "iFragProjection"), 1, True,
             frag_projection)
-        gl.glUniform1iv(gl.glGetUniformLocation(target.program, "iRegionValid"),
-                        target.dimension.region_count,
-                        state.region_validity)
         gl.glUniform1i(
             gl.glGetUniformLocation(target.program, "iConfig.showGrid"),
             params.showGrid)
@@ -233,13 +228,10 @@ class WorldRenderer:
                                    state: RenderState):
         regions = sum((tuple(row) for row in self.view.region_grid), tuple()) \
             if self.view \
-            else (None,) * target.dimension.region_count
-
-        for i, r in enumerate(regions):
-            state.region_validity[i] = r is not None
+            else (EMPTY_REGION,) * target.dimension.region_count
 
         # upload combined regions to shader storage buffer
-        regions_combined = b''.join(r if r else EMPTY_REGION for r in regions)
+        regions_combined = b''.join(regions)
         gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, target.grid_regions_ssbo)
         gl.glBufferSubData(gl.GL_SHADER_STORAGE_BUFFER,
                            0,
