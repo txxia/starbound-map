@@ -1,4 +1,4 @@
-#version 330
+#version 430
 
 // Config
 #define GRID_INTENSITY 0.0001
@@ -21,21 +21,16 @@
 #define REGION_COUNT (GRID_DIM*GRID_DIM)
 
 #define REGION_DIM 32
-#define REGION_TILES ((REGION_DIM)*(REGION_DIM))
+#define TILES_PER_REGION ((REGION_DIM)*(REGION_DIM))
 #define TILE_SIZE 32
-#define REGION_BYTES ((REGION_TILES)*(TILE_SIZE))
-#define LAYERS_PER_REGION 2
+#define REGION_BYTES ((TILES_PER_REGION)*(TILE_SIZE))
 
-// Tile Data
-#define FG_MAT(d) ((d)[0].x >> 16)
-#define FG_HUE(d) (HUE8(((d)[0].x >> 8) & 0xFFU))
-#define FG_VAR(d) ((d)[0].x & 0xFU)
+// Tile data access
+#define MAT(u) ((u) >> 16)
+#define HUE(u) (HUE8(((u) >> 8) & 0xFFU))
+#define VAR(u) ((u) & 0xFU)
 
-#define BG_MAT(d) ((d)[0].z >> 16)
-#define BG_HUE(d) (HUE8(((d)[0].z >> 8) & 0xFFU))
-#define BG_VAR(d) ((d)[0].z & 0xFFU)
-
-#define COLL(d) (((d)[1].z >> 8) & 0xFFU)
+#define COLL(u) (((u) >> 8) & 0xFFU)
 #define COLL_EMPTY      1U
 #define COLL_PLATFORM   2U
 #define COLL_DYNAMIC    3U
@@ -45,10 +40,26 @@ uniform vec2 iResolution;
 uniform float iTime;
 uniform mat3 iFragProjection;
 uniform bool iRegionValid[REGION_COUNT];
-uniform usamplerBuffer iRegionLayer[REGION_COUNT * LAYERS_PER_REGION];
 uniform struct Config {
     bool showGrid;
 } iConfig;
+
+struct Tile {
+    uint fg_mat2_hue_var;
+    uint fg_mod2_hueShift;
+    uint bg_mat2_hue_var;
+    uint bg_mod2_hueShift;
+    uint liquidLevel;
+    uint liquidPressure;
+    uint liquid_collision_dungeon2;
+    uint biome2_indestructible;
+};
+struct Region {
+    Tile tiles[TILES_PER_REGION];
+};
+layout(std430, binding = 1) buffer World {
+    Region gRegions[];
+};
 
 out vec4 outputColor;
 
@@ -71,9 +82,9 @@ vec3 hsv2rgb(vec3 c) {
 
 // Get the linear tile id in a region, given its 2D coordinate.
 int getTileId(in vec2 normalCoord01){
-    // transform to [0..TILE_SIZE]^2
-    ivec2 t = ivec2(normalCoord01 * TILE_SIZE) + 1;
-    return (t.y - 1) * REGION_DIM + t.x - 1;
+    // transform to [0..REGION_DIM]^2
+    ivec2 t = ivec2(normalCoord01 * REGION_DIM);
+    return t.y * REGION_DIM + t.x;
 }
 
 // Get region number in [0, REGION_COUNT) based on pixel coordinate in [0, 1]^2.
@@ -82,10 +93,8 @@ int getRegionId(in vec2 normalCoord01) {
     return r01.y * GRID_DIM + r01.x;
 }
 
-void getTile(in int regionId, in int id, inout uvec4 tileData[2]){
-    int regionBase = regionId * 2;
-    tileData[0] = texelFetch(iRegionLayer[regionBase], id);
-    tileData[1] = texelFetch(iRegionLayer[regionBase+1], id);
+void getTile(in int regionId, in int tileId, inout Tile tile) {
+    tile = gRegions[regionId].tiles[tileId];
 }
 
 vec3 invalidRegionColor(in vec2 normalCoord01){
@@ -93,14 +102,11 @@ vec3 invalidRegionColor(in vec2 normalCoord01){
 }
 
 vec3 tileColor(in int regionId, in int tileId) {
-    uvec4 tileData[2];
-    getTile(regionId, tileId, tileData);
-
-    uint fgId = FG_MAT(tileData);
-    float fgHueShift01 = FG_HUE(tileData);
-    uint bgId = BG_MAT(tileData);
-    float bgHueShift01 = BG_HUE(tileData);
-    float coll = float(COLL(tileData) != COLL_EMPTY);
+    Tile tile;
+    getTile(regionId, tileId, tile);
+    float fgHueShift01 = HUE(tile.fg_mat2_hue_var);
+    float bgHueShift01 = HUE(tile.bg_mat2_hue_var);
+    float coll = float(COLL(tile.liquid_collision_dungeon2) != COLL_EMPTY);
 
     return mix(
         hsv2rgb(vec3(bgHueShift01, 1.0, 0.2)),

@@ -1,4 +1,3 @@
-import ctypes
 import dataclasses as dc
 import typing as tp
 
@@ -8,7 +7,7 @@ from OpenGL.GL import shaders
 
 from utils.resource import asset_path
 from .model import TILES_PER_REGION, WorldView
-from .renderer_data import convert_region_to_layers
+from .renderer_data import pad_region, PADDED_TILE_SIZE
 
 QUAD_VERTS_BL = 0
 QUAD_VERTS_BR = 1
@@ -26,7 +25,9 @@ QUAD_IDX = np.array([
     [0, 2, 3]
 ], np.uint16)
 
-LAYERS_PER_REGION = 2
+GRID_SSBO_BINDING = 1
+REGION_SIZE = TILES_PER_REGION * PADDED_TILE_SIZE
+EMPTY_REGION = b'\0' * REGION_SIZE
 
 
 @dc.dataclass(frozen=True, eq=True)
@@ -36,10 +37,6 @@ class RenderDimension:
     @property
     def region_count(self):
         return self.grid_size ** 2
-
-    @property
-    def region_layer_count(self):
-        return self.region_count * LAYERS_PER_REGION
 
 
 @dc.dataclass
@@ -56,15 +53,13 @@ class RenderTarget:
     vao: tp.Any
     vbo: tp.Any
     ebo: tp.Any
-    regions_texs: tp.Any
-    regions_tbos: tp.Any
+    grid_regions_ssbo: tp.Any
 
     vertex_shader: tp.Any
     fragment_shader: tp.Any
     program: tp.Any
 
     indices: np.ndarray
-    region_layers: tp.Tuple[int]
 
 
 @dc.dataclass
@@ -81,8 +76,6 @@ class RenderParameters:
 
 def init_target(dimension: RenderDimension,
                 initial_state: RenderState) -> RenderTarget:
-    region_layers = tuple(range(dimension.region_layer_count))
-
     # Setting up VAO
     vao = gl.glGenVertexArrays(1)
     gl.glBindVertexArray(vao)
@@ -108,12 +101,12 @@ def init_target(dimension: RenderDimension,
                     QUAD_IDX,
                     gl.GL_STATIC_DRAW)
     # Regions data
-    regions_texs = gl.glGenTextures(dimension.region_layer_count)
-    regions_tbos = gl.glGenBuffers(dimension.region_layer_count)
-    for tbo in regions_tbos:
-        gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, tbo)
-        gl.glBufferData(gl.GL_TEXTURE_BUFFER, TILES_PER_REGION * 16, None,
-                        gl.GL_DYNAMIC_DRAW)
+    grid_regions_ssbo = gl.glGenBuffers(1)
+    gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, grid_regions_ssbo)
+    gl.glBufferData(gl.GL_SHADER_STORAGE_BUFFER,
+                    REGION_SIZE * dimension.region_count,
+                    data=None,
+                    usage=gl.GL_DYNAMIC_READ)
 
     # Create shaders
     vs_src, fs_src = __load_shaders()
@@ -126,13 +119,11 @@ def init_target(dimension: RenderDimension,
         vao=vao,
         vbo=vbo,
         ebo=ebo,
-        regions_texs=regions_texs,
-        regions_tbos=regions_tbos,
+        grid_regions_ssbo=grid_regions_ssbo,
         vertex_shader=vs,
         fragment_shader=fs,
         program=program,
-        indices=np.copy(QUAD_IDX),
-        region_layers=region_layers
+        indices=np.copy(QUAD_IDX)
     )
 
 
@@ -197,13 +188,6 @@ class WorldRenderer:
                        target: RenderTarget,
                        state: RenderState,
                        params: RenderParameters):
-        # textures
-        for i, (tex, tbo) in enumerate(
-                zip(target.regions_texs, target.regions_tbos)):
-            gl.glActiveTexture(gl.GL_TEXTURE0 + i)
-            gl.glBindTexture(gl.GL_TEXTURE_BUFFER, tex)
-            gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_RGBA32UI, tbo)
-
         # Uniforms
         rect_size = params.rect[1] - params.rect[0]
         rect_resolution = params.frame_size * rect_size / 2
@@ -222,9 +206,6 @@ class WorldRenderer:
         gl.glUniform1iv(gl.glGetUniformLocation(target.program, "iRegionValid"),
                         target.dimension.region_count,
                         state.region_validity)
-        gl.glUniform1iv(gl.glGetUniformLocation(target.program, "iRegionLayer"),
-                        target.dimension.region_layer_count,
-                        target.region_layers)
         gl.glUniform1i(
             gl.glGetUniformLocation(target.program, "iConfig.showGrid"),
             params.showGrid)
@@ -244,27 +225,29 @@ class WorldRenderer:
                            data=state.vertices)
 
     def _update_region_textures(self, target: RenderTarget, state: RenderState):
-        regions = sum(self.view.region_grid, []) \
-            if self.view is not None \
-            else [None] * target.dimension.region_count
+        regions = sum((tuple(row) for row in self.view.region_grid), tuple()) \
+            if self.view \
+            else (None,) * target.dimension.region_count
 
         for i, r in enumerate(regions):
             state.region_validity[i] = r is not None
 
-        layers: tp.List[bytes] = sum(
-            (convert_region_to_layers(r) for r in regions),
-            [])
+        regions_padded = tuple(pad_region(r, tile_size=31, offset=7)
+                               if r else None
+                               for r in regions)
 
-        # upload each layer to a texture buffer
-        for layer, tbo in zip(layers, target.regions_tbos):
-            if layer is None:
-                continue
-            layer_ctypes = np.frombuffer(layer).ctypes
-            gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, tbo)
-            buf = gl.glMapBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_WRITE_ONLY)
-            ctypes.memmove(buf, layer_ctypes, len(layer))
-            gl.glUnmapBuffer(gl.GL_TEXTURE_BUFFER)
-        gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, 0)
+        # upload combined regions to shader storage buffer
+        regions_combined = b''.join(r if r else EMPTY_REGION
+                                    for r in regions_padded)
+        gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, target.grid_regions_ssbo)
+        gl.glBufferSubData(gl.GL_SHADER_STORAGE_BUFFER,
+                           0,
+                           REGION_SIZE * target.dimension.region_count,
+                           data=regions_combined
+                           )
+        gl.glBindBufferBase(gl.GL_SHADER_STORAGE_BUFFER,
+                            GRID_SSBO_BINDING,
+                            target.grid_regions_ssbo)
 
 
 def _project_rect(rect: np.ndarray) -> np.ndarray:

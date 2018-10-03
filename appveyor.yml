@@ -31,13 +31,9 @@ build_script:
 test_script:
 - python -m pytest
 
-before_deploy:
-- pip install pyinstaller
-- pyinstaller mapviewer.spec
-
 artifacts:
 - path: 'dist/*.exe'
-- path: 'dist/coverage/html/*'
+- path: 'build/coverage/html/*'
 
 deploy:
 - provider: GitHub
@@ -45,8 +41,12 @@ deploy:
   description: Build v$(appveyor_build_version)
   auth_token:
     secure: aEuceXtTw4tyxWydRznIxKqzxFIkZAFriOlmvvjYFsmP57I/0uWNWCZc2GcRylOa
-  artifact: dist\StarboundMapViewer.exe
+  artifact: dist/StarboundMapViewer.exe
   draft: false
   on:
     branch: master
     appveyor_repo_tag: false
+
+before_deploy:
+- pip install pyinstaller
+- pyinstaller mapviewer.spec

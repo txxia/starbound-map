@@ -6,6 +6,7 @@ import struct
 import zlib
 from collections import namedtuple
 
+from . import sbon
 from .btreedb5 import BTreeDB5
 from .sbasset6 import SBAsset6
 
