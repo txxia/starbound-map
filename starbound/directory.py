@@ -4,7 +4,8 @@ import mmap
 import os
 import typing as tp
 
-from starbound.data import World
+import starbound.data as sbdata
+from map.model import World
 
 
 class GameDirectory:
@@ -35,15 +36,15 @@ class GameDirectory:
         return glob.glob(self.get_file(relpath))
 
     def get_world(self, coord: str) -> tp.Optional[World]:
-        world_file = self.get_file(GameDirectory.WORLD_PATH.format(coordinates=coord))
+        world_file = self.get_file(
+            GameDirectory.WORLD_PATH.format(coordinates=coord))
         if not os.path.isfile(world_file):
             logging.warning("Failed to load world, not a file: %s", world_file)
             return None
         else:
             world_fd = open(world_file, 'rb')
             world_mm = mmap.mmap(world_fd.fileno(), 0, access=mmap.ACCESS_READ)
-            world = World(world_mm)
-            world.read_metadata()
+            world = World(sbdata.World(world_mm))
             logging.debug('Loaded world [%s] at %s', coord, world_file)
             return world
 
@@ -56,6 +57,9 @@ class GameDirectory:
         return self.game_root is not None and os.path.isdir(self.game_root)
 
     def _sync_world_list(self):
-        world_files = self.get_files(GameDirectory.WORLD_PATH.format(coordinates='*'))
-        self._world_list[:] = (os.path.splitext(os.path.basename(f))[0] for f in world_files)
-        logging.debug("Updated world list, found %d worlds", len(self.world_list))
+        world_files = self.get_files(
+            GameDirectory.WORLD_PATH.format(coordinates='*'))
+        self._world_list[:] = (os.path.splitext(os.path.basename(f))[0] for f in
+                               world_files)
+        logging.debug("Updated world list, found %d worlds",
+                      len(self.world_list))

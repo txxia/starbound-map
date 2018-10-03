@@ -75,8 +75,9 @@ class WorldViewer(object):
         if self.world is not None:
             self.player_start = np.array(self.world.metadata['playerStart'],
                                          dtype=np.int)
-            self.world_size = np.array((self.world.width, self.world.height),
-                                       dtype=np.int)
+            self.world_size = np.array(
+                (self.world.t_width, self.world.t_height),
+                dtype=np.int)
             self.world_size_in_regions = np.ceil(
                 self.world_size / REGION_DIM).astype(np.int)
 
@@ -172,7 +173,7 @@ class WorldViewer(object):
                 if self.world is not None:
                     imgui.label_text('Coordinates', self.world_coord)
                     imgui.label_text('Size', str(
-                        np.array((self.world.width, self.world.height))))
+                        np.array((self.world.t_width, self.world.t_height))))
                     imgui.label_text('PlayerStart', str(self.player_start))
                 else:
                     imgui.text('Select a world to start')

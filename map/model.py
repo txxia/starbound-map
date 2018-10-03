@@ -1,4 +1,5 @@
 import io
+import math
 import struct
 import typing as tp
 from collections import namedtuple
@@ -76,16 +77,17 @@ class Tile(_RawTile):
 class World:
     def __init__(self, dao: sbdata.World):
         self.__dao = dao
+        self.__dao.read_metadata()
 
     @cache.lazy_property
     def r_width(self) -> int:
         """Width in number of regions."""
-        return self.__dao.width
+        return math.ceil(self.t_width / REGION_DIM)
 
     @cache.lazy_property
     def r_height(self) -> int:
         """Height in number of regions."""
-        return self.__dao.height
+        return math.ceil(self.t_height / REGION_DIM)
 
     @cache.lazy_property
     def t_width(self) -> int:
@@ -93,7 +95,7 @@ class World:
         Width in number of tiles, which is:
         (number of regions) x (number of tiles on one side of a region)
         """
-        return self.r_width * REGION_DIM
+        return self.__dao.width
 
     @cache.lazy_property
     def t_height(self) -> int:
@@ -101,12 +103,16 @@ class World:
         Height in number of tiles, which is:
         (number of regions) x (number of tiles on one side of a region)
         """
-        return self.r_height * REGION_DIM
+        return self.__dao.height
+
+    @property
+    def metadata(self) -> dict:
+        return self.__dao.metadata
 
     def get_region(self, rx: int, ry: int) -> tp.Tuple[Tile]:
         assert 0 <= rx <= self.r_width, "region X out of bound"
         assert 0 <= ry <= self.r_height, "region Y out of bound"
-        tile_stream = io.BytesIO(self._get_raw_tiles(rx, ry))
+        tile_stream = io.BytesIO(self.get_raw_tiles(rx, ry))
         return tuple(Tile(tile_stream.read(RAW_TILE_SIZE))
                      for _ in range(TILES_PER_REGION))
 
@@ -120,12 +126,12 @@ class World:
 
     @cache.lazy_property
     def bytes(self) -> bytes:
-        return b''.join(self._get_raw_tiles(rx, ry)
+        return b''.join(self.get_raw_tiles(rx, ry)
                         for rx in range(self.r_width)
                         for ry in range(self.r_height))
 
     @cache.memoized_method(maxsize=1024)
-    def _get_raw_tiles(self, rx: int, ry: int) -> bytes:
+    def get_raw_tiles(self, rx: int, ry: int) -> bytes:
         try:
             unpadded_region = self.__dao.get_raw_tiles(rx, ry)
             return self._pad_region(unpadded_region,
@@ -165,7 +171,7 @@ class WorldView:
     MIN_ZOOM = 1.e-4
 
     def __init__(self,
-                 world: sbdata.World,
+                 world: World,
                  center_region: np.ndarray,
                  grid_dim: int = 5):
         """
@@ -173,8 +179,6 @@ class WorldView:
         :param center_region: center tile coordinate of the view
         :param grid_dim: number of cells on any side of the grid
         """
-        self._on_region_updated = []
-
         assert world is not None
         self._world = world
 
@@ -183,6 +187,8 @@ class WorldView:
         self._pixel_size = np.ones(2)
 
         # TODO deprecate fields below
+        self._on_region_updated = []
+
         self._grid_dim = None
         self.grid_dim = grid_dim
 
@@ -193,16 +199,8 @@ class WorldView:
         self.center_region = center_region
 
     @property
-    def world(self) -> sbdata.World:
+    def world(self) -> World:
         return self._world
-
-    @property
-    def width_in_tiles(self) -> int:
-        return self._world.width * REGION_DIM
-
-    @property
-    def height_in_tiles(self) -> int:
-        return self._world.height * REGION_DIM
 
     @property
     def focus(self) -> np.array:
@@ -212,8 +210,8 @@ class WorldView:
     def focus(self, value: np.array):
         """Tile-level focus point."""
         assert value.shape == (2,)
-        assert 0 <= value[0] <= self.width_in_tiles
-        assert 0 <= value[1] <= self.height_in_tiles
+        assert 0 <= value[0] <= self.world.t_width
+        assert 0 <= value[1] <= self.world.t_height
         self._focus = value
 
     @property
@@ -284,16 +282,12 @@ class WorldView:
                       self.grid_dim * REGION_DIM).astype(np.int)
         return region_coord, tile_coord
 
-    @cache.memoized_method(maxsize=1024)
-    def get_region(self, region_coord: tp.Sequence[int]) -> tp.Optional[bytes]:
+    def get_region(self, region_coord: tp.Sequence[int]) -> bytes:
         """
         :param region_coord: region coordinate
         :return: regions at the given location
         """
-        try:
-            return self.world.get_raw_tiles(region_coord[0], region_coord[1])
-        except KeyError or RuntimeError:
-            return None
+        return self.world.get_raw_tiles(region_coord[0], region_coord[1])
 
     def _update_regions(self):
         """

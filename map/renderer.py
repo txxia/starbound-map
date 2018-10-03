@@ -6,8 +6,7 @@ import numpy as np
 from OpenGL.GL import shaders
 
 from utils.resource import asset_path
-from .model import TILES_PER_REGION, WorldView
-from .renderer_data import pad_region, PADDED_TILE_SIZE
+from .model import REGION_SIZE, WorldView
 
 QUAD_VERTS_BL = 0
 QUAD_VERTS_BR = 1
@@ -26,7 +25,6 @@ QUAD_IDX = np.array([
 ], np.uint16)
 
 GRID_SSBO_BINDING = 1
-REGION_SIZE = TILES_PER_REGION * PADDED_TILE_SIZE
 EMPTY_REGION = b'\0' * REGION_SIZE
 
 
@@ -54,6 +52,7 @@ class RenderTarget:
     vbo: tp.Any
     ebo: tp.Any
     grid_regions_ssbo: tp.Any
+    regions_ssbo: tp.Any
 
     vertex_shader: tp.Any
     fragment_shader: tp.Any
@@ -108,6 +107,8 @@ def init_target(dimension: RenderDimension,
                     data=None,
                     usage=gl.GL_DYNAMIC_READ)
 
+    regions_ssbo = gl.glGenBuffers(1)
+
     # Create shaders
     vs_src, fs_src = __load_shaders()
     vs = shaders.compileShader(vs_src, gl.GL_VERTEX_SHADER)
@@ -120,6 +121,7 @@ def init_target(dimension: RenderDimension,
         vbo=vbo,
         ebo=ebo,
         grid_regions_ssbo=grid_regions_ssbo,
+        regions_ssbo=regions_ssbo,
         vertex_shader=vs,
         fragment_shader=fs,
         program=program,
@@ -152,7 +154,7 @@ class WorldRenderer:
         self.target = init_target(self.dimension, self.state)
 
         # initial callback
-        self._update_region_textures(self.target, self.state)
+        self._update_grid_region_buffer(self.target, self.state)
 
     @property
     def view(self):
@@ -164,9 +166,11 @@ class WorldRenderer:
             self._view = value
             if value is not None:
                 self._view.on_region_updated(
-                    lambda: self._update_region_textures(self.target,
-                                                         self.state))
-                self._update_region_textures(self.target, self.state)
+                    lambda: self._update_grid_region_buffer(self.target,
+                                                            self.state))
+                self._update_grid_region_buffer(self.target, self.state)
+                self._update_region_buffer(self.target,
+                                           self.state)
 
     def draw(self, params: RenderParameters):
         """
@@ -224,7 +228,9 @@ class WorldRenderer:
                            size=state.vertices.nbytes,
                            data=state.vertices)
 
-    def _update_region_textures(self, target: RenderTarget, state: RenderState):
+    def _update_grid_region_buffer(self,
+                                   target: RenderTarget,
+                                   state: RenderState):
         regions = sum((tuple(row) for row in self.view.region_grid), tuple()) \
             if self.view \
             else (None,) * target.dimension.region_count
@@ -232,13 +238,8 @@ class WorldRenderer:
         for i, r in enumerate(regions):
             state.region_validity[i] = r is not None
 
-        regions_padded = tuple(pad_region(r, tile_size=31, offset=7)
-                               if r else None
-                               for r in regions)
-
         # upload combined regions to shader storage buffer
-        regions_combined = b''.join(r if r else EMPTY_REGION
-                                    for r in regions_padded)
+        regions_combined = b''.join(r if r else EMPTY_REGION for r in regions)
         gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, target.grid_regions_ssbo)
         gl.glBufferSubData(gl.GL_SHADER_STORAGE_BUFFER,
                            0,
@@ -248,6 +249,11 @@ class WorldRenderer:
         gl.glBindBufferBase(gl.GL_SHADER_STORAGE_BUFFER,
                             GRID_SSBO_BINDING,
                             target.grid_regions_ssbo)
+
+    def _update_region_buffer(self,
+                              target: RenderTarget,
+                              state: RenderState):
+        pass
 
 
 def _project_rect(rect: np.ndarray) -> np.ndarray:

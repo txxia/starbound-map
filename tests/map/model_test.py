@@ -1,3 +1,5 @@
+from functools import reduce
+from operator import mul
 from unittest import TestCase, mock
 
 import numpy as np
@@ -10,9 +12,15 @@ CENTER_REGION = np.array([4, 2])
 REGION_COORD = (4, 3)
 GRID_DIM = 3  # 9x9 grid
 
-WORLD_WIDTH = 64
-WORLD_HEIGHT = 32
-WORLD_SIZE = np.array([WORLD_WIDTH, WORLD_HEIGHT])
+WORLD_WIDTH_IN_TILES = 400
+WORLD_HEIGHT_IN_TILES = 300
+WORLD_SIZE_IN_TILES = np.array(
+    [WORLD_WIDTH_IN_TILES, WORLD_HEIGHT_IN_TILES])
+
+WORLD_WIDTH_IN_REGIONS = WORLD_WIDTH_IN_TILES // model.REGION_DIM + 1
+WORLD_HEIGHT_IN_REGIONS = WORLD_HEIGHT_IN_TILES // model.REGION_DIM + 1
+WORLD_SIZE_IN_REGIONS = np.array(
+    [WORLD_WIDTH_IN_REGIONS, WORLD_HEIGHT_IN_REGIONS])
 
 REGION_X = 1
 REGION_Y = 2
@@ -79,15 +87,15 @@ class TestTile(TestCase):
 class TestWorld(TestCase):
     def setUp(self):
         self.mock_dao = mock.MagicMock(sbdata.World, autospec=True)
-        self.mock_dao.width = WORLD_WIDTH
-        self.mock_dao.height = WORLD_HEIGHT
+        self.mock_dao.width = WORLD_WIDTH_IN_TILES
+        self.mock_dao.height = WORLD_HEIGHT_IN_TILES
         self.world = model.World(self.mock_dao)
 
     def test_properties(self):
-        assert WORLD_WIDTH == self.world.r_width
-        assert WORLD_HEIGHT == self.world.r_height
-        assert WORLD_WIDTH * model.REGION_DIM == self.world.t_width
-        assert WORLD_HEIGHT * model.REGION_DIM == self.world.t_height
+        assert WORLD_WIDTH_IN_TILES == self.world.t_width
+        assert WORLD_HEIGHT_IN_TILES == self.world.t_height
+        assert WORLD_WIDTH_IN_REGIONS == self.world.r_width
+        assert WORLD_HEIGHT_IN_REGIONS == self.world.r_height
 
     def test_get_region(self):
         self.mock_dao.get_raw_tiles.return_value = REGION_DATA
@@ -105,7 +113,7 @@ class TestWorld(TestCase):
 
     def test_get_region__out_of_bound_positive(self):
         with self.assertRaises(AssertionError):
-            self.world.get_region(WORLD_WIDTH + 1, 0)
+            self.world.get_region(WORLD_WIDTH_IN_REGIONS + 1, 0)
 
     def test_get_region__null(self):
         self.mock_dao.get_raw_tiles = mock.Mock(side_effect=KeyError)
@@ -138,7 +146,7 @@ class TestWorld(TestCase):
 
     def test_get_tile__out_of_bound_positive(self):
         with self.assertRaises(AssertionError):
-            self.world.get_tile(0, WORLD_WIDTH * model.REGION_DIM + 1)
+            self.world.get_tile(0, WORLD_WIDTH_IN_TILES + 1)
 
     def test_get_all_tiles(self):
         self.mock_dao.get_raw_tiles.return_value = REGION_DATA
@@ -152,7 +160,10 @@ class TestWorld(TestCase):
         # pr.disable()
         # pr.print_stats(sort='time')
 
-        assert WORLD_WIDTH * WORLD_HEIGHT * model.REGION_SIZE == len(tiles)
+        expected_size = reduce(mul, [WORLD_SIZE_IN_REGIONS.prod(),
+                                     model.TILES_PER_REGION,
+                                     model.RAW_TILE_SIZE])
+        assert expected_size == len(tiles)
 
     def test_pad_region(self):
         padded_region = model.World._pad_region(b'\1\2\1\2',
@@ -163,9 +174,9 @@ class TestWorld(TestCase):
 
 class TestWorldView(TestCase):
     def setUp(self):
-        self.mock_world = mock.MagicMock(sbdata.World)
-        self.mock_world.width = WORLD_WIDTH
-        self.mock_world.height = WORLD_HEIGHT
+        self.mock_world = mock.MagicMock(model.World)
+        self.mock_world.t_width = WORLD_WIDTH_IN_TILES
+        self.mock_world.t_height = WORLD_HEIGHT_IN_TILES
 
         self.mock_raw_tiles = mock.MagicMock(bytes)
 
@@ -180,7 +191,7 @@ class TestWorldView(TestCase):
         npt.assert_array_equal(CENTER_REGION, self.view.center_region)
 
     def test_focus(self):
-        valid_focus = WORLD_SIZE * model.REGION_DIM - 0.1
+        valid_focus = WORLD_SIZE_IN_TILES - 0.1
         self.view.focus = valid_focus
         npt.assert_array_equal(valid_focus, self.view.focus)
 
