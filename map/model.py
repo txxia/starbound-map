@@ -49,7 +49,7 @@ _RawTile = namedtuple('RawTile', [
 ])
 
 REGION_SIZE = TILES_PER_REGION * RAW_TILE_SIZE
-VALID_TILE_PADDING = b'\1'
+VALID_TILE_PADDING = 1
 NULL_TILE = b'\0' * RAW_TILE_SIZE
 NULL_REGION = NULL_TILE * TILES_PER_REGION
 
@@ -139,29 +139,25 @@ class World:
         except KeyError or RuntimeError:
             return NULL_REGION
 
-    # TODO optimize this
     @staticmethod
     def _pad_region(region_data: bytes, *,
                     tile_size: int,
                     offset: int,
-                    pad_value: bytes = b'\0') -> bytes:
+                    pad_value: int = 0) -> bytes:
         """
         Insert padding `pad_value` to the `offset`th (zero-based) byte
         of every tile.
         """
+        region_size = len(region_data)
         assert len(region_data) % tile_size == 0
         assert tile_size >= offset
-        assert len(pad_value) == 1
-        tile_count = len(region_data) // tile_size
-        new_tile_size = tile_size + 1
-        padded_region = bytearray(pad_value * tile_count * new_tile_size)
-        for i in range(tile_count):
-            base = i * new_tile_size
-            r = base - i
-            padded_region[base: base + offset] = region_data[r:r + offset]
-            padded_region[base + offset + 1: base + new_tile_size] = \
-                region_data[r + offset:r + tile_size]
-        return bytes(padded_region)
+        assert pad_value < 2 ** 8
+        tile_count = region_size // tile_size
+        original_linear = np.frombuffer(region_data, dtype=np.ubyte)
+        original_2d = original_linear.reshape(tile_count,
+                                              tile_size)
+        padded = np.insert(original_2d, offset, pad_value, axis=1)
+        return padded.tobytes()
 
 
 class WorldView:
