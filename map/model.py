@@ -212,8 +212,6 @@ class WorldView:
     def focus(self, value: np.ndarray):
         assert value.dtype.kind == 'f'
         assert value.shape == (2,)
-        assert 0 <= value[0] < self.world.t_width
-        assert 0 <= value[1] < self.world.t_height
         self._focus = value
 
     @property

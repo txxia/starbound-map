@@ -171,10 +171,14 @@ class WorldRenderer:  # pragma: no cover
 
         if self._view:
             clip_rect = self._view.clip_rect(canvas_size=rect_resolution)
-            gl.glUniform2i(
-                gl.glGetUniformLocation(target.program,
-                                        "iView.worldRSize"),
-                self._view.world.r_width, self._view.world.r_height)
+            gl.glUniform2iv(
+                gl.glGetUniformLocation(target.program, "iView.worldTSize"),
+                1,
+                self._view.world.t_size.astype(np.int32))
+            gl.glUniform2iv(
+                gl.glGetUniformLocation(target.program, "iView.worldRSize"),
+                1,
+                self._view.world.r_size.astype(np.int32))
             gl.glUniform2fv(
                 gl.glGetUniformLocation(target.program,
                                         "iView.clipRect.position"), 1,

@@ -1,10 +1,28 @@
 #version 430
 
-// Config
-#define GRID_THICKNESS 0.01
-#define GRID_CROSS_LENGTH 0.1
+// Constants
+#define BLACK (vec3(0.0))
+#define WHITE (vec3(1.0))
+#define RED (vec3(1.0, 0.0, 0.0))
+#define GREEN (vec3(0.0, 1.0, 0.0))
+#define BLUE (vec3(0.0, 0.0, 1.0))
+
+#define REGION_DIM 32
+#define REGION_DIM_INV (1.0/REGION_DIM)
+#define TILES_PER_REGION ((REGION_DIM)*(REGION_DIM))
+#define TILE_SIZE 32
+#define REGION_BYTES ((TILES_PER_REGION)*(TILE_SIZE))
+
+// Config (unit of length is tile, unless specified)
+#define GRID_THICKNESS 0.3
+#define GRID_CROSS_LENGTH 4
 #define UNKNOWN_REGION_STRIP_SPEED 10.0
+#define OO_BOUND_FADE_ALPHA 0.1
+#define OO_BOUND_FADE_DISTANCE (REGION_DIM * 10)
+
+// Debug Config
 #define DEBUG_COLOR_ALPHA 0.12345
+// #define DEBUG_WORLD_COORD_VALIDITY
 // #define DEBUG_WORLD_REGION_COORD
 // #define DEBUG_WORLD_REGION_ID
 // #define DEBUG_WORLD_REGION_TILE_COORD
@@ -22,19 +40,6 @@
 #define RGB16(u16) (vec3(RGB16_R(u16), RGB16_G(u16), RGB16_B(u16)))
 
 #define HUE8(u8) (FDIV(u8, 360))
-
-// Constants
-#define BLACK (vec3(0.0))
-#define WHITE (vec3(1.0))
-#define RED (vec3(1.0, 0.0, 0.0))
-#define GREEN (vec3(0.0, 1.0, 0.0))
-#define BLUE (vec3(0.0, 0.0, 1.0))
-
-#define REGION_DIM 32
-#define REGION_DIM_INV (1.0/REGION_DIM)
-#define TILES_PER_REGION ((REGION_DIM)*(REGION_DIM))
-#define TILE_SIZE 32
-#define REGION_BYTES ((TILES_PER_REGION)*(TILE_SIZE))
 
 // Tile data access
 #define MAT(u) ((u) >> 16)
@@ -71,6 +76,7 @@ uniform float iTime;
 uniform mat3 iFragProjection;
 uniform struct View {
     ivec2 worldRSize;
+    ivec2 worldTSize;
     Rect clipRect;
 } iView;
 uniform struct Config {
@@ -113,8 +119,14 @@ uint Tile_collision(in Tile tile){ return COLL(tile.liquid_collision_dungeon2); 
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void locateTile(in vec2 norm01, out vec2 world_coord, out ivec2 region_coord, out ivec2 tile_coord){
-    world_coord = iView.clipRect.position + iView.clipRect.size * norm01;
+// validity: Non-negative -> invalid, otherwise valid
+void locateTile(in vec2 norm01, out float validity, out vec2 world_coord, out ivec2 region_coord, out ivec2 tile_coord){
+    vec2 unwrapped_world_coord = iView.clipRect.position + iView.clipRect.size * norm01;
+    vec2 min_dist_to_boundary = min(unwrapped_world_coord, iView.worldTSize - unwrapped_world_coord);
+    validity = min(
+        min_dist_to_boundary.x,
+        min_dist_to_boundary.y);
+    world_coord = mod(unwrapped_world_coord, iView.worldTSize);   // wrap around regions that are out of boundary
     region_coord = ivec2(world_coord / REGION_DIM);
     tile_coord = ivec2(mod(world_coord, REGION_DIM));
 }
@@ -172,14 +184,19 @@ vec3 tileColor(in Tile tile, in vec2 norm01) {
     return mix(unknown_color, color, max(0.5, round(float(known_tile))));
 }
 
-vec3 gridColor(in vec2 world_coord, float zoom) {
+vec3 regionGridColor(in vec2 world_coord, float zoom) {
     vec2 region_coord = world_coord / REGION_DIM;
-    vec2 dist_to_grid = abs(round(region_coord) - region_coord);
+    vec2 dist_to_grid = abs(round(region_coord) - region_coord) * REGION_DIM;
     float max_dist_to_grid = max(dist_to_grid.x, dist_to_grid.y);
     float min_dist_to_grid = min(dist_to_grid.x, dist_to_grid.y);
-    float intensity = smoothstep(1.0, 0.0, min_dist_to_grid / GRID_THICKNESS)
-            * step(max_dist_to_grid, GRID_CROSS_LENGTH);
+    float intensity = 1.0 - smoothstep(0.0, 1.0, min_dist_to_grid / GRID_THICKNESS);
+    intensity *= step(max_dist_to_grid, GRID_CROSS_LENGTH); // limited to a circle from the corner
     return vec3(intensity * pow(min(zoom, 1.0), 5.0));
+}
+
+vec3 boundaryGridColor(in float world_coord_validity) {
+    float intensity = 1.0 - smoothstep(0.0, 1.0, abs(world_coord_validity) / GRID_THICKNESS);
+    return vec3(intensity);
 }
 
 vec4 mainImage(in vec2 frag_coord){
@@ -187,24 +204,34 @@ vec4 mainImage(in vec2 frag_coord){
     vec3 n01aug = iFragProjection * vec3(frag_coord, 1.0);
     vec2 n01 = n01aug.xy / n01aug.z;    // Normalized coord in [0, 1]^2
     float zoom = FDIV(iResolution.x, iView.clipRect.size.x);
-    vec3 pixel;
+    vec3 frag_color;
 
+    float world_coord_validity;
+    vec2 world_coord;
+    ivec2 region_coord;
+    ivec2 tile_coord;
+    locateTile(n01, world_coord_validity, world_coord, region_coord, tile_coord);
+
+    #if defined(DEBUG_WORLD_COORD_VALIDITY)
+        SET_DEBUG_COLOR(vec3(world_coord_validity / max(iView.worldTSize.x, iView.worldTSize.y)));
+    #else
     if (iView.clipRect.size.x == 0) {
-        pixel = mix(BLACK, unknownRegionColor(n01), 0.5);
+        frag_color = mix(BLACK, unknownRegionColor(n01), 0.5);
     } else {
-        vec2 world_coord;
-        ivec2 region_coord;
-        ivec2 tile_coord;
-        locateTile(n01, world_coord, region_coord, tile_coord);
         Tile tile = getWorldTile(region_coord, tile_coord);
-        pixel = tileColor(tile, n01);
+        frag_color = tileColor(tile, n01);
+
+        // Fade out when the tile is out of boundary
+        frag_color = mix(frag_color, BLACK,
+                clamp(-world_coord_validity / OO_BOUND_FADE_DISTANCE, 0, 1));
 
         if (iConfig.showGrid){
-            pixel += gridColor(world_coord, zoom);
+            frag_color += regionGridColor(world_coord, zoom);
+            frag_color += boundaryGridColor(world_coord_validity);
         }
     }
-
-    return vec4(pixel, 1.0);
+    #endif
+    return vec4(frag_color, 1.0);
 }
 
 void main()
