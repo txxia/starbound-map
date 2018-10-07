@@ -74,3 +74,7 @@ class Rect:  # pragma: no cover
     @property
     def position(self) -> np.ndarray:
         return rectangle.position(self._m)
+
+    @property
+    def center(self) -> np.ndarray:
+        return self.position + self.size / 2

@@ -84,7 +84,7 @@ class TestWorld(TestCase):
     METADATA = mock.MagicMock()
 
     def setUp(self):
-        self.mock_dao = mock.MagicMock(sbdata.World, autospec=True)
+        self.mock_dao = mock.MagicMock(sbdata.World)
         self.mock_dao.width = WORLD_WIDTH_IN_TILES
         self.mock_dao.height = WORLD_HEIGHT_IN_TILES
         self.mock_dao.metadata = self.METADATA
@@ -176,7 +176,7 @@ class TestWorld(TestCase):
 
 class TestWorldView(TestCase):
     FRAME_SIZE = WORLD_SIZE_IN_TILES
-    ZOOM = 1
+    ZOOM = 0
     FOCUS = np.zeros(2, dtype=np.float)
     CLIP_RECT = Rect(-FRAME_SIZE[0] / 2,
                      -FRAME_SIZE[1] / 2,
@@ -217,17 +217,3 @@ class TestWorldView(TestCase):
         assert model.WorldView.MIN_ZOOM == self.view.zoom
         self.view.zoom = float('inf')
         assert model.WorldView.MAX_ZOOM == self.view.zoom
-
-    def test_clip_rect(self):
-        clip_rect = self.view.clip_rect(self.FRAME_SIZE)
-        npt.assert_array_equal(self.CLIP_RECT.data, clip_rect.data)
-
-    def test_trace__center(self):
-        tile_coord = self.view.trace(frame_size=self.FRAME_SIZE,
-                                     coord01=np.full(2, 0.5))
-        npt.assert_array_equal(self.FOCUS, tile_coord)
-
-    def test_trace__corner(self):
-        tile_coord = self.view.trace(frame_size=self.FRAME_SIZE,
-                                     coord01=np.full(2, 0))
-        npt.assert_array_equal(self.CLIP_RECT.position, tile_coord)

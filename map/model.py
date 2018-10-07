@@ -6,9 +6,8 @@ from collections import namedtuple
 
 import numpy as np
 
-from starbound import data as sbdata
+import starbound.data as sbdata
 from utils import cache
-from utils.shape import Rect
 
 REGION_DIM = 32
 TILES_PER_REGION = REGION_DIM * REGION_DIM
@@ -187,7 +186,7 @@ class WorldView:
 
     # boundary to prevent division by zero
     MAX_ZOOM = 1.e4
-    MIN_ZOOM = 1.e-4
+    MIN_ZOOM = -1.e4
 
     def __init__(self,
                  world: World):
@@ -198,7 +197,7 @@ class WorldView:
         self._world = world
 
         self._focus = np.zeros(2)
-        self._zoom = 1
+        self._zoom = 0
 
     @property
     def world(self) -> World:
@@ -213,61 +212,20 @@ class WorldView:
     def focus(self, value: np.ndarray):
         assert value.dtype.kind == 'f'
         assert value.shape == (2,)
-        value[0] = min(max(0, value[0]), self.world.t_width)
-        value[1] = min(max(0, value[1]), self.world.t_height)
+        assert 0 <= value[0] < self.world.t_width
+        assert 0 <= value[1] < self.world.t_height
         self._focus = value
 
     @property
     def zoom(self) -> float:
         """
         Zoom factor.
-        Use higher zoom to see more details.
-        Use lower zoom to see the overall picture.
+        Use zero zoom to display one tile per pixel.
+        Use higher/positive zoom to see more details.
+        Use lower/negative zoom to see the overall picture.
         """
         return self._zoom
 
     @zoom.setter
     def zoom(self, value: float):
         self._zoom = min(max(WorldView.MIN_ZOOM, value), WorldView.MAX_ZOOM)
-
-    def suggest_max_zoom(self, frame_size: np.ndarray) -> float:  # pragma: no cover
-        """
-        Suggested zoom upperbound.
-        This value allows at least one region to be displayed.
-        :param frame_size: size of the drawing frame
-        :return: suggested max zoom
-        """
-        return np.min(frame_size) / REGION_DIM
-
-    def suggest_min_zoom(self, frame_size: np.ndarray) -> float:  # pragma: no cover
-        """
-        Suggested zoom lowerbound.
-        This value allows the entire map to be displayed.
-        :param frame_size: size of the drawing frame
-        :return: suggested min zoom
-        """
-        return np.min(frame_size) / np.max(self.world.t_size)
-
-    def clip_rect(self, frame_size: np.ndarray) -> Rect:
-        """
-        Tile-level clip rect of this view.
-        Note that the vertices of this rect is not necessarily inside the map.
-        :param frame_size: size of the frame
-        """
-        assert frame_size.size == 2
-        assert np.all(frame_size > 0)
-        rect_size = frame_size / self.zoom
-        position = self.focus - rect_size / 2
-        return Rect(position[0], position[1], rect_size[0], rect_size[1])
-
-    def trace(self, frame_size: np.ndarray, coord01: np.ndarray) \
-            -> np.ndarray:
-        """
-        Find the location indicated by the given coordinates in this view.
-        Note that the coordinate might not be valid.
-        :param frame_size: size of the frame
-        :param coord01: coordinate in the current view
-        :return: tile coordinates
-        """
-        rect = self.clip_rect(frame_size)
-        return (rect.position + coord01 * rect.size).astype(np.int)

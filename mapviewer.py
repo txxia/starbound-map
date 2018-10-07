@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import logging
-import math
 import os
 import typing as tp
 
@@ -19,12 +18,15 @@ import glfw
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
 
-from starbound import GameDirectory
-from map import WorldRenderer, RenderParameters, WorldView, Tile
+from map.directory import GameDirectory
+from map.model import WorldView, Tile
+from map.renderer import WorldRenderer, RenderParameters
+from map.controller import WorldViewController
 from utils import asyncjob
 from utils.config import CONFIG
 
 ZOOM_SPEED = 0.1
+PAN_SPEED = 10
 
 CONFIG_SECTION = 'map_viewer'
 CONFIG_GAME_ROOT = 'starbound_root'
@@ -70,8 +72,8 @@ class WorldViewer:
         self.world = None
         self.player_start = np.zeros(2, dtype=np.int)
 
-        self.view: tp.Optional[WorldView] = None
-        self.world_renderer = WorldRenderer(self.view)
+        self.view: tp.Optional[WorldViewController] = None
+        self.world_renderer = WorldRenderer()
 
         self.io = imgui.get_io()
         self.set_styles()
@@ -92,14 +94,15 @@ class WorldViewer:
                                          dtype=np.int)
             logging.info(f'World size in regions: {self.world.r_size}')
 
-            self.view = WorldView(
-                self.world)
+            self.view = WorldViewController(WorldView(self.world))
             self.view.focus = self.player_start.astype(np.float)
             self.world_renderer.change_view(self.view)
 
-    def draw_ui(self):
+    def draw_ui(self, frame_size: np.ndarray):
         imgui.new_frame()
 
+        if self.view:
+            self.view.frame_size = frame_size
         self.show_map_controller_window()
 
         if G.gui_show_help_overlay:
@@ -133,15 +136,10 @@ class WorldViewer:
                                  imgui.WINDOW_NO_COLLAPSE |
                                  imgui.WINDOW_NO_TITLE_BAR):
             return
-        mouse = np.array(self.io.mouse_pos)
-
         G.tile_selected = None
         if self.view is not None:
-            if (0 <= mouse).all() and \
-                    (mouse <= G.render_params.frame_size).all():
-                tile_coord = self.view.trace(
-                    G.render_params.frame_size,
-                    G.mouse_in_map_normal01)
+            if not self.io.want_capture_mouse:
+                tile_coord = self.view.trace(coord01=G.mouse_in_map_normal01)
                 if self.view.world.is_valid_tile_coord(*tile_coord):
                     G.tile_selected = (
                         tile_coord,
@@ -149,66 +147,53 @@ class WorldViewer:
                     )
 
             # Zooming
-            log_zoom_min = math.log(
-                self.view.suggest_min_zoom(G.render_params.frame_size))
-            log_zoom_max = math.log(
-                self.view.suggest_max_zoom(G.render_params.frame_size))
-            log_zoom = math.log(self.view.zoom)
-            log_zoom_val = log_zoom
-            zoom_pivot = self.view.focus
-            if self.io.mouse_wheel:
-                log_zoom_val = min(
-                    max(log_zoom_min,
-                        log_zoom + self.io.mouse_wheel * ZOOM_SPEED),
-                    log_zoom_max)
-                if G.tile_selected:
-                    tile_coord, _ = G.tile_selected
-                    zoom_pivot = tile_coord.astype(np.float)
-
+            if not self.io.want_capture_mouse and self.io.mouse_wheel:
+                zoom_pivot = G.tile_selected[0].astype(np.float) if G.tile_selected else None
+                self.view.control_zoom(self.io.mouse_wheel * ZOOM_SPEED, zoom_pivot)
             if imgui.button("-"):
-                log_zoom_val = max(log_zoom_val - ZOOM_SPEED, log_zoom_min)
+                self.view.control_zoom(-ZOOM_SPEED)
             imgui.same_line()
             if imgui.button("+"):
-                log_zoom_val = min(log_zoom_val + ZOOM_SPEED, log_zoom_max)
+                self.view.control_zoom(+ZOOM_SPEED)
             imgui.same_line()
-            _, log_zoom_val = imgui.slider_float(
+            zoom_slided, zoom_newval = imgui.slider_float(
                 "Zoom",
-                log_zoom_val,
-                log_zoom_min,
-                log_zoom_max,
-                display_format='%.2f')
-            previous_zoom = self.view.zoom
-            self.view.zoom = math.exp(log_zoom_val)
-            zoom_diff = (previous_zoom - self.view.zoom) / self.view.zoom
-            self.view.focus += (self.view.focus - zoom_pivot) * zoom_diff
+                value=self.view.zoom,
+                min_value=self.view.min_zoom,
+                max_value=self.view.max_zoom,
+                display_format='%.1f')
+            if zoom_slided:
+                self.view.zoom = zoom_newval
 
             # Panning
-            center_x, center_y = self.view.focus
+            focus_x, focus_y = self.view.focus
+            focus_v = np.zeros(2)
             if imgui.button("<") or self.get_keys_on_map(glfw.KEY_A,
                                                          glfw.KEY_LEFT):
-                center_x = max(center_x - 10, 1)
+                focus_v[0] -= PAN_SPEED
             imgui.same_line()
             if imgui.button(">") or self.get_keys_on_map(glfw.KEY_D,
                                                          glfw.KEY_RIGHT):
-                center_x = min(center_x + 10, self.world.t_width)
+                focus_v[0] += PAN_SPEED
             imgui.same_line()
-            _, center_x = imgui.slider_int("X", center_x,
-                                           min_value=0,
-                                           max_value=self.world.t_width)
+            _, focus_x = imgui.slider_int("Focus.X", focus_x,
+                                          min_value=self.view.min_focus[0],
+                                          max_value=self.view.max_focus[0])
             if imgui.button("v") or self.get_keys_on_map(glfw.KEY_S,
                                                          glfw.KEY_DOWN):
-                center_y = max(center_y - 10, 1)
+                focus_v[1] -= PAN_SPEED
             imgui.same_line()
             if imgui.button("^") or self.get_keys_on_map(glfw.KEY_W,
                                                          glfw.KEY_UP):
-                center_y = min(center_y + 10, self.world.t_height)
+                focus_v[1] += PAN_SPEED
 
             imgui.same_line()
-            _, center_y = imgui.slider_int("Y", center_y,
-                                           min_value=0,
-                                           max_value=self.world.t_height)
+            _, focus_y = imgui.slider_int("Focus.Y", focus_y,
+                                          min_value=self.view.min_focus[1],
+                                          max_value=self.view.max_focus[1])
 
-            self.view.focus = np.array((center_x, center_y), dtype=np.float)
+            self.view.focus = np.array((focus_x, focus_y), dtype=np.float)
+            self.view.control_focus(focus_v)
             imgui.separator()
 
         _, G.render_params.showGrid = imgui.checkbox("Grid",
@@ -351,9 +336,8 @@ def impl_glfw_init():
         int(width), int(height), window_name, None, None
     )
     glfw.make_context_current(window)
-    glfw.set_window_iconify_callback(window, lambda _,
-                                                    minimized: G.on_minimization_event(
-        minimized))
+    glfw.set_window_iconify_callback(
+        window, lambda _, minimized: G.on_minimization_event(minimized))
 
     if not window:
         glfw.terminate()
@@ -398,10 +382,10 @@ async def async_main(window):
         G.mouse_in_map_normal01 = (mouse - map_rect[0]) / map_rect_size
 
         G.render_params.frame_size = frame_size
-        G.render_params.rect = Rect(x=map_rect_normal01[0][0],
-                                    y=map_rect_normal01[0][1],
-                                    width=map_rect_normal_size[0],
-                                    height=map_rect_normal_size[1])
+        G.render_params.canvas_rect = Rect(x=map_rect_normal01[0][0],
+                                           y=map_rect_normal01[0][1],
+                                           width=map_rect_normal_size[0],
+                                           height=map_rect_normal_size[1])
         G.render_params.time_in_seconds = glfw.get_time()
 
         gl.glViewport(0, 0, frame_size[0], frame_size[1])
@@ -410,7 +394,7 @@ async def async_main(window):
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
         viewer.world_renderer.draw(G.render_params)
-        viewer.draw_ui()
+        viewer.draw_ui(frame_size)
         glfw.swap_buffers(window)
 
         await asyncio.sleep(0)

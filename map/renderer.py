@@ -8,7 +8,8 @@ from OpenGL.GL import shaders
 from utils import asyncjob
 from utils.resource import asset_path
 from utils.shape import Rect
-from .model import REGION_SIZE, WorldView
+from .controller import WorldViewController
+from .model import REGION_SIZE
 
 QUAD_VERTS_BL = 0
 QUAD_VERTS_BR = 1
@@ -54,8 +55,8 @@ class RenderParameters:
     frame_size: np.ndarray = dc.field(default_factory=lambda: np.zeros(2))
     """size of the framebuffer"""
     showGrid: bool = True
-    rect: Rect = dc.field(default_factory=lambda: Rect())
-    """(min, max) representing region in [-1, +1]^2 to draw the map"""
+    canvas_rect: Rect = dc.field(default_factory=lambda: Rect())
+    """(min, max) representing region in viewport [0, 1]^2 to draw the map"""
     time_in_seconds: float = 0
     """time since the application started"""
 
@@ -121,13 +122,12 @@ def __load_shaders():
 
 
 class WorldRenderer:  # pragma: no cover
-    def __init__(self, view: tp.Optional[WorldView]):
-        self._view: tp.Optional[WorldView] = None
-        self.change_view(view)
+    def __init__(self):
+        self._view: tp.Optional[WorldViewController] = None
         self.state = init_state()
         self.target = init_target(self.state)
 
-    def change_view(self, value: tp.Optional[WorldView]):
+    def change_view(self, value: tp.Optional[WorldViewController]):
         if self._view != value:
             self._view = value
             if value is not None:
@@ -151,9 +151,9 @@ class WorldRenderer:  # pragma: no cover
                        state: RenderState,
                        params: RenderParameters):
         # Uniforms
-        rect_resolution = params.frame_size * params.rect.size
+        rect_resolution = params.frame_size * params.canvas_rect.size
         # Compute fragment projection from window space to rect space [-1,1]^2
-        rect_in_frag_space = params.rect.data * params.frame_size
+        rect_in_frag_space = params.canvas_rect.data * params.frame_size
         frag_projection = _project_rect(np.array([
             rect_in_frag_space[0],
             rect_in_frag_space[0] + rect_in_frag_space[1]
@@ -170,7 +170,7 @@ class WorldRenderer:  # pragma: no cover
             params.showGrid)
 
         if self._view:
-            clip_rect = self._view.clip_rect(rect_resolution)
+            clip_rect = self._view.clip_rect(canvas_size=rect_resolution)
             gl.glUniform2i(
                 gl.glGetUniformLocation(target.program,
                                         "iView.worldRSize"),
@@ -187,7 +187,7 @@ class WorldRenderer:  # pragma: no cover
         gl.glBindVertexArray(target.vao)
 
         # quad
-        gl_rect_bounds = params.rect.bounds * 2 - 1
+        gl_rect_bounds = params.canvas_rect.bounds * 2 - 1
         state.vertices[QUAD_VERTS_BL][:] = gl_rect_bounds[0:2]  # min_x, min_y
         state.vertices[QUAD_VERTS_BR][:] = (
             gl_rect_bounds[2], gl_rect_bounds[1])  # max_x, min_y
