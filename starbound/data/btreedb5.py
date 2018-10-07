@@ -4,15 +4,13 @@ import binascii
 import io
 import struct
 
-from starbound import sbon
-
+from . import sbon
 
 # Override range with xrange when running Python 2.x.
 try:
     range = xrange
 except:
     pass
-
 
 HEADER = '>8si16si?ixxxxii?ixxxxii?445x'
 HEADER_SIZE = struct.calcsize(HEADER)

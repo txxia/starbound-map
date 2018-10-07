@@ -1,10 +1,10 @@
 import atexit
-import configparser
+from configparser import ConfigParser
 
 CONFIG_FILE = 'config.ini'
 
 
-class Config(configparser.ConfigParser):
+class Config(ConfigParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -16,10 +16,18 @@ class Config(configparser.ConfigParser):
             self.write(f)
 
 
-CONFIG = Config()
-CONFIG.load()
+CONFIG = None
+
+
+def init():
+    global CONFIG
+    CONFIG = Config()
+    CONFIG.load()
+
+
+init()
 
 
 @atexit.register
-def save_config():
+def save_config():  # pragma: no cover
     CONFIG.save()

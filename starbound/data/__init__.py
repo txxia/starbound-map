@@ -8,7 +8,6 @@ from collections import namedtuple
 
 from . import sbon
 from .btreedb5 import BTreeDB5
-from .directory import *
 from .sbasset6 import SBAsset6
 
 # Override range with xrange when running Python 2.x.

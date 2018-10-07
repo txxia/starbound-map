@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from collections import namedtuple
 import struct
+from collections import namedtuple
 
-from starbound import sbon
-
+from . import sbon
 
 # Override range with xrange when running Python 2.x.
 try:
@@ -12,10 +11,8 @@ try:
 except:
     pass
 
-
 HEADER = '>8sQ'
 HEADER_SIZE = struct.calcsize(HEADER)
-
 
 IndexEntry = namedtuple('IndexEntry', ['offset', 'length'])
 
