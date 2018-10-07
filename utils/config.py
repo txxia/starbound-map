@@ -29,5 +29,5 @@ init()
 
 
 @atexit.register
-def save_config():
+def save_config():  # pragma: no cover
     CONFIG.save()

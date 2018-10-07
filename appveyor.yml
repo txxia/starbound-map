@@ -15,8 +15,8 @@ init:
 - "SET PATH=%PYTHON%;%PATH%"
 
 - python -V
-- "%PYTHON%\\Scripts\\pip.exe install --upgrade pip"
-- "%PYTHON%\\Scripts\\pip.exe install --upgrade setuptools wheel virtualenv"
+- python -m pip install --upgrade pip
+- python -m pip install --upgrade setuptools wheel virtualenv
 
 before_build:
 - python -m virtualenv venv

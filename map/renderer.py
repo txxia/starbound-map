@@ -5,7 +5,9 @@ import OpenGL.GL as gl
 import numpy as np
 from OpenGL.GL import shaders
 
+from utils import asyncjob
 from utils.resource import asset_path
+from utils.shape import Rect
 from .model import REGION_SIZE, WorldView
 
 QUAD_VERTS_BL = 0
@@ -24,34 +26,21 @@ QUAD_IDX = np.array([
     [0, 2, 3]
 ], np.uint16)
 
-GRID_SSBO_BINDING = 1
+WORLD_SSBO_BINDING = 0
 EMPTY_REGION = b'\0' * REGION_SIZE
-
-
-@dc.dataclass(frozen=True, eq=True)
-class RenderDimension:
-    grid_size: int
-
-    @property
-    def region_count(self):
-        return self.grid_size ** 2
 
 
 @dc.dataclass
 class RenderState:
-    dimension: RenderDimension
-    vertices: np.array
+    vertices: np.ndarray
 
 
 @dc.dataclass(frozen=True)
 class RenderTarget:
-    dimension: RenderDimension
-
     vao: tp.Any
     vbo: tp.Any
     ebo: tp.Any
-    grid_regions_ssbo: tp.Any
-    regions_ssbo: tp.Any
+    world_ssbo: tp.Any
 
     vertex_shader: tp.Any
     fragment_shader: tp.Any
@@ -62,18 +51,16 @@ class RenderTarget:
 
 @dc.dataclass
 class RenderParameters:
-    frame_size: np.array = dc.field(default_factory=lambda: np.zeros(2))
+    frame_size: np.ndarray = dc.field(default_factory=lambda: np.zeros(2))
     """size of the framebuffer"""
     showGrid: bool = True
-    rect: np.ndarray = dc.field(
-        default_factory=lambda: np.array([[-1, -1], [1, 1]]))
+    rect: Rect = dc.field(default_factory=lambda: Rect())
     """(min, max) representing region in [-1, +1]^2 to draw the map"""
     time_in_seconds: float = 0
     """time since the application started"""
 
 
-def init_target(dimension: RenderDimension,
-                initial_state: RenderState) -> RenderTarget:
+def init_target(initial_state: RenderState) -> RenderTarget:  # pragma: no cover
     # Setting up VAO
     vao = gl.glGenVertexArrays(1)
     gl.glBindVertexArray(vao)
@@ -99,14 +86,7 @@ def init_target(dimension: RenderDimension,
                     QUAD_IDX,
                     gl.GL_STATIC_DRAW)
     # Regions data
-    grid_regions_ssbo = gl.glGenBuffers(1)
-    gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, grid_regions_ssbo)
-    gl.glBufferData(gl.GL_SHADER_STORAGE_BUFFER,
-                    REGION_SIZE * dimension.region_count,
-                    data=None,
-                    usage=gl.GL_DYNAMIC_READ)
-
-    regions_ssbo = gl.glGenBuffers(1)
+    world_ssbo = gl.glGenBuffers(1)
 
     # Create shaders
     vs_src, fs_src = __load_shaders()
@@ -115,12 +95,10 @@ def init_target(dimension: RenderDimension,
     program = shaders.compileProgram(vs, fs)
 
     return RenderTarget(
-        dimension=dimension,
         vao=vao,
         vbo=vbo,
         ebo=ebo,
-        grid_regions_ssbo=grid_regions_ssbo,
-        regions_ssbo=regions_ssbo,
+        world_ssbo=world_ssbo,
         vertex_shader=vs,
         fragment_shader=fs,
         program=program,
@@ -128,9 +106,8 @@ def init_target(dimension: RenderDimension,
     )
 
 
-def init_state(dimension: RenderDimension) -> RenderState:
+def init_state() -> RenderState:
     return RenderState(
-        dimension=dimension,
         vertices=np.copy(QUAD_VERTS),
     )
 
@@ -143,40 +120,23 @@ def __load_shaders():
     return vs_src, fs_src
 
 
-class WorldRenderer:
-    def __init__(self, view: WorldView, grid_dim: int):
-        self._view = None
-        self.view = view
-        self.dimension = RenderDimension(grid_size=grid_dim)
-        self.state = init_state(self.dimension)
-        self.target = init_target(self.dimension, self.state)
+class WorldRenderer:  # pragma: no cover
+    def __init__(self, view: tp.Optional[WorldView]):
+        self._view: tp.Optional[WorldView] = None
+        self.change_view(view)
+        self.state = init_state()
+        self.target = init_target(self.state)
 
-        # initial callback
-        self._update_grid_region_buffer(self.target, self.state)
-
-    @property
-    def view(self):
-        return self._view
-
-    @view.setter
-    def view(self, value):
+    def change_view(self, value: tp.Optional[WorldView]):
         if self._view != value:
             self._view = value
             if value is not None:
-                self._view.on_region_updated(
-                    lambda: self._update_grid_region_buffer(self.target,
-                                                            self.state))
-                self._update_grid_region_buffer(self.target, self.state)
-                self._update_region_buffer(self.target,
-                                           self.state)
+                self._update_region_buffer(self.target)
 
     def draw(self, params: RenderParameters):
         """
         Draw a frame of the world view.
         """
-        gl.glClearColor(0, 0, 0, 1)
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-
         gl.glUseProgram(self.target.program)
 
         self._update_params(self.target, self.state, params)
@@ -191,13 +151,13 @@ class WorldRenderer:
                        state: RenderState,
                        params: RenderParameters):
         # Uniforms
-        rect_size = params.rect[1] - params.rect[0]
-        rect_resolution = params.frame_size * rect_size / 2
+        rect_resolution = params.frame_size * params.rect.size
         # Compute fragment projection from window space to rect space [-1,1]^2
-        rect01 = (params.rect + 1) * 0.5
-        rect_in_frag_space = rect01 * params.frame_size
-        frag_projection = _project_rect(rect_in_frag_space).astype(np.float32)
-
+        rect_in_frag_space = params.rect.data * params.frame_size
+        frag_projection = _project_rect(np.array([
+            rect_in_frag_space[0],
+            rect_in_frag_space[0] + rect_in_frag_space[1]
+        ]))
         gl.glUniform2f(gl.glGetUniformLocation(target.program, "iResolution"),
                        rect_resolution[0], rect_resolution[1])
         gl.glUniform1f(gl.glGetUniformLocation(target.program, "iTime"),
@@ -209,43 +169,59 @@ class WorldRenderer:
             gl.glGetUniformLocation(target.program, "iConfig.showGrid"),
             params.showGrid)
 
+        if self._view:
+            clip_rect = self._view.clip_rect(rect_resolution)
+            gl.glUniform2i(
+                gl.glGetUniformLocation(target.program,
+                                        "iView.worldRSize"),
+                self._view.world.r_width, self._view.world.r_height)
+            gl.glUniform2fv(
+                gl.glGetUniformLocation(target.program,
+                                        "iView.clipRect.position"), 1,
+                clip_rect.position)
+            gl.glUniform2fv(
+                gl.glGetUniformLocation(target.program,
+                                        "iView.clipRect.size"), 1,
+                clip_rect.size)
+
         gl.glBindVertexArray(target.vao)
 
         # quad
-        state.vertices[QUAD_VERTS_BL][:] = params.rect[0]  # min_x, min_y
+        gl_rect_bounds = params.rect.bounds * 2 - 1
+        state.vertices[QUAD_VERTS_BL][:] = gl_rect_bounds[0:2]  # min_x, min_y
         state.vertices[QUAD_VERTS_BR][:] = (
-            params.rect[1][0], params.rect[0][1])  # max_x, min_y
-        state.vertices[QUAD_VERTS_TR][:] = params.rect[1]  # max_x, max_y
+            gl_rect_bounds[2], gl_rect_bounds[1])  # max_x, min_y
+        state.vertices[QUAD_VERTS_TR][:] = gl_rect_bounds[2:]  # max_x, max_y
         state.vertices[QUAD_VERTS_TL][:] = (
-            params.rect[0][0], params.rect[1][1])  # min_x, max_y
+            gl_rect_bounds[0], gl_rect_bounds[3])  # min_x, max_y
         gl.glBufferSubData(gl.GL_ARRAY_BUFFER,
                            offset=0,
-                           size=state.vertices.nbytes,
                            data=state.vertices)
 
-    def _update_grid_region_buffer(self,
-                                   target: RenderTarget,
-                                   state: RenderState):
-        regions = sum((tuple(row) for row in self.view.region_grid), tuple()) \
-            if self.view \
-            else (EMPTY_REGION,) * target.dimension.region_count
-
-        # upload combined regions to shader storage buffer
-        regions_combined = b''.join(regions)
-        gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, target.grid_regions_ssbo)
+    def _update_region_sub_data(self, region_idx: int, region_data: bytes):
+        gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, self.target.world_ssbo)
         gl.glBufferSubData(gl.GL_SHADER_STORAGE_BUFFER,
-                           0,
-                           REGION_SIZE * target.dimension.region_count,
-                           data=regions_combined
-                           )
-        gl.glBindBufferBase(gl.GL_SHADER_STORAGE_BUFFER,
-                            GRID_SSBO_BINDING,
-                            target.grid_regions_ssbo)
+                           offset=region_idx * REGION_SIZE,
+                           data=region_data)
 
     def _update_region_buffer(self,
-                              target: RenderTarget,
-                              state: RenderState):
-        pass
+                              target: RenderTarget):
+        world_data_size = self._view.world.r_count * REGION_SIZE
+        gl.glBindBuffer(gl.GL_SHADER_STORAGE_BUFFER, target.world_ssbo)
+        gl.glBufferData(gl.GL_SHADER_STORAGE_BUFFER,
+                        world_data_size,
+                        data=None,
+                        usage=gl.GL_DYNAMIC_DRAW)
+        gl.glBindBufferBase(gl.GL_SHADER_STORAGE_BUFFER,
+                            WORLD_SSBO_BINDING,
+                            target.world_ssbo)
+
+        asyncjob.submit(asyncjob.AsyncJobParameters(
+            self._view.world.raw_regions(),
+            self._view.world.r_count,
+            self._update_region_sub_data,
+            name="LoadWorld",
+            batch_size=256))
 
 
 def _project_rect(rect: np.ndarray) -> np.ndarray:

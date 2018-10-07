@@ -1,2 +1,2 @@
 from .model import *
-from .renderer import RenderDimension, RenderState, RenderTarget, RenderParameters, WorldRenderer
+from .renderer import RenderState, RenderTarget, RenderParameters, WorldRenderer

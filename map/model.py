@@ -103,6 +103,22 @@ class World:
         """
         return self.__dao.height
 
+    @cache.lazy_property
+    def t_size(self) -> np.ndarray:
+        return np.array([self.t_width, self.t_height])
+
+    @cache.lazy_property
+    def t_count(self) -> int:
+        return self.t_size.prod()
+
+    @cache.lazy_property
+    def r_size(self) -> np.ndarray:
+        return np.array([self.r_width, self.r_height])
+
+    @cache.lazy_property
+    def r_count(self) -> int:
+        return self.r_size.prod()
+
     @property
     def metadata(self) -> dict:
         return self.__dao.metadata
@@ -114,29 +130,33 @@ class World:
         return tuple(Tile(tile_stream.read(RAW_TILE_SIZE))
                      for _ in range(TILES_PER_REGION))
 
+    def is_valid_tile_coord(self, tx: int, ty: int) -> bool:
+        return 0 <= tx < self.t_width and \
+               0 <= ty < self.t_height
+
     @cache.memoized_method(maxsize=65536)
     def get_tile(self, tx: int, ty: int) -> Tile:
-        assert 0 <= tx <= self.t_width, "tile X out of bound"
-        assert 0 <= ty <= self.t_height, "tile Y out of bound"
+        assert self.is_valid_tile_coord(tx, ty), "tile coordinates out of bound"
         region = self.get_region(tx // REGION_DIM, ty // REGION_DIM)
         tile_index_in_region = (ty % REGION_DIM) * REGION_DIM + tx % REGION_DIM
         return region[tile_index_in_region]
 
-    @cache.lazy_property
-    def bytes(self) -> bytes:
-        return b''.join(self.get_raw_tiles(rx, ry)
-                        for rx in range(self.r_width)
-                        for ry in range(self.r_height))
+    def raw_regions(self) -> tp.Iterator[bytes]:
+        return (self.get_raw_tiles(rx, ry)
+                for ry in range(self.r_height)
+                for rx in range(self.r_width))
 
     @cache.memoized_method(maxsize=1024)
     def get_raw_tiles(self, rx: int, ry: int) -> bytes:
         try:
+            assert 0 <= rx < self.r_width
+            assert 0 <= ry < self.r_height
             unpadded_region = self.__dao.get_raw_tiles(rx, ry)
             return self._pad_region(unpadded_region,
                                     tile_size=UNPADDED_TILE_SIZE,
                                     offset=PADDING_BYTE_INDEX,
                                     pad_value=VALID_TILE_PADDING)
-        except KeyError or RuntimeError:
+        except (AssertionError, KeyError, RuntimeError):
             return NULL_REGION
 
     @staticmethod
@@ -170,136 +190,84 @@ class WorldView:
     MIN_ZOOM = 1.e-4
 
     def __init__(self,
-                 world: World,
-                 center_region: np.ndarray,
-                 grid_dim: int = 5):
+                 world: World):
         """
         :param world: starbound world
-        :param center_region: center tile coordinate of the view
-        :param grid_dim: number of cells on any side of the grid
         """
         assert world is not None
         self._world = world
 
         self._focus = np.zeros(2)
         self._zoom = 1
-        self._pixel_size = np.ones(2)
-
-        # TODO deprecate fields below
-        self._on_region_updated = []
-
-        self._grid_dim = None
-        self.grid_dim = grid_dim
-
-        self._region_grid = [[None for _ in range(grid_dim)]
-                             for _ in range(grid_dim)]
-
-        self._center_region = np.zeros(2)
-        self.center_region = center_region
 
     @property
     def world(self) -> World:
         return self._world
 
     @property
-    def focus(self) -> np.array:
+    def focus(self) -> np.ndarray:
+        """Tile-level focus point."""
         return self._focus
 
     @focus.setter
-    def focus(self, value: np.array):
-        """Tile-level focus point."""
+    def focus(self, value: np.ndarray):
+        assert value.dtype.kind == 'f'
         assert value.shape == (2,)
-        assert 0 <= value[0] <= self.world.t_width
-        assert 0 <= value[1] <= self.world.t_height
+        value[0] = min(max(0, value[0]), self.world.t_width)
+        value[1] = min(max(0, value[1]), self.world.t_height)
         self._focus = value
 
     @property
     def zoom(self) -> float:
+        """
+        Zoom factor.
+        Use higher zoom to see more details.
+        Use lower zoom to see the overall picture.
+        """
         return self._zoom
 
     @zoom.setter
     def zoom(self, value: float):
         self._zoom = min(max(WorldView.MIN_ZOOM, value), WorldView.MAX_ZOOM)
 
-    @property
-    def pixel_size(self) -> np.array:
-        return self._pixel_size
+    def suggest_max_zoom(self, frame_size: np.ndarray) -> float:  # pragma: no cover
+        """
+        Suggested zoom upperbound.
+        This value allows at least one region to be displayed.
+        :param frame_size: size of the drawing frame
+        :return: suggested max zoom
+        """
+        return np.min(frame_size) / REGION_DIM
 
-    @pixel_size.setter
-    def pixel_size(self, value: np.array):
-        assert value.shape == (2,)
-        assert value[0] > 0
-        assert value[1] > 0
-        self._pixel_size = value
+    def suggest_min_zoom(self, frame_size: np.ndarray) -> float:  # pragma: no cover
+        """
+        Suggested zoom lowerbound.
+        This value allows the entire map to be displayed.
+        :param frame_size: size of the drawing frame
+        :return: suggested min zoom
+        """
+        return np.min(frame_size) / np.max(self.world.t_size)
 
-    def clip_rect(self) -> Rect:
-        """Tile-level clip rect of this view."""
-        rect_size = self.pixel_size / self.zoom
+    def clip_rect(self, frame_size: np.ndarray) -> Rect:
+        """
+        Tile-level clip rect of this view.
+        Note that the vertices of this rect is not necessarily inside the map.
+        :param frame_size: size of the frame
+        """
+        assert frame_size.size == 2
+        assert np.all(frame_size > 0)
+        rect_size = frame_size / self.zoom
         position = self.focus - rect_size / 2
         return Rect(position[0], position[1], rect_size[0], rect_size[1])
 
-    @property
-    def region_grid(self):
-        return self._region_grid
-
-    @property
-    def center_region(self):
-        return self._center_region
-
-    @center_region.setter
-    def center_region(self, value: np.ndarray):
-        assert value.size == 2
-        assert value.dtype == np.int
-        if any(self._center_region != value):
-            self._center_region = value
-            self._update_regions()
-
-    @property
-    def grid_dim(self):
-        return self._grid_dim
-
-    @grid_dim.setter
-    def grid_dim(self, value: int):
-        assert value > 0
-        if self._grid_dim != value:
-            self._grid_dim = value
-
-    def on_region_updated(self, callback):
-        self._on_region_updated.append(callback)
-
-    def get_location(self, coord01: np.ndarray) \
-            -> tp.Tuple[np.ndarray, np.ndarray]:
+    def trace(self, frame_size: np.ndarray, coord01: np.ndarray) \
+            -> np.ndarray:
         """
-        Find the location indicated by the given coordinate in the current view
+        Find the location indicated by the given coordinates in this view.
+        Note that the coordinate might not be valid.
+        :param frame_size: size of the frame
         :param coord01: coordinate in the current view
-        :return: (region_coord, tile_coord)
+        :return: tile coordinates
         """
-        region_coord = self.center_region - \
-                       self.grid_dim // 2 + \
-                       (coord01 * self.grid_dim).astype(np.int)
-        tile_coord = ((coord01 % (1 / self.grid_dim)) *
-                      self.grid_dim * REGION_DIM).astype(np.int)
-        return region_coord, tile_coord
-
-    def get_region(self, region_coord: tp.Sequence[int]) -> bytes:
-        """
-        :param region_coord: region coordinate
-        :return: regions at the given location
-        """
-        return self.world.get_raw_tiles(region_coord[0], region_coord[1])
-
-    def _update_regions(self):
-        """
-        Updates the grid of size grid_dim^2 containing regions centered at the current view.
-        """
-        # FIXME handle wrapping around
-        # Retrieve visible regions as a grid,
-        # each item is a byte array of 1024 tiles (31 bytes per tile)
-        for y in range(self.grid_dim):
-            ry = self.center_region[1] + y - 1
-            for x in range(self.grid_dim):
-                rx = self.center_region[0] + x - 1
-                self.region_grid[y][x] = self.get_region((rx, ry))
-
-        for cb in self._on_region_updated:
-            cb()
+        rect = self.clip_rect(frame_size)
+        return (rect.position + coord01 * rect.size).astype(np.int)

@@ -1,12 +1,19 @@
 #version 430
 
 // Config
-#define GRID_INTENSITY 0.0001
-#define INVALID_REGION_STRIP_SPEED 10.0
-// #define DEBUG_TILE_ID
-// #define DEBUG_REGION_ID
+#define GRID_THICKNESS 0.01
+#define GRID_CROSS_LENGTH 0.1
+#define UNKNOWN_REGION_STRIP_SPEED 10.0
+#define DEBUG_COLOR_ALPHA 0.12345
+// #define DEBUG_WORLD_REGION_COORD
+// #define DEBUG_WORLD_REGION_ID
+// #define DEBUG_WORLD_REGION_TILE_COORD
 
 // Macros
+#define SET_DEBUG_COLOR(v3) (output_color = vec4((v3), DEBUG_COLOR_ALPHA))
+#define IS_DEBUG_COLOR_SET() (abs(output_color.a - DEBUG_COLOR_ALPHA) < 0.001)
+#define GET_DEBUG_COLOR() (vec4(output_color.xyz, 1.0))
+
 #define FDIV(a, b) (float(a) / float(b))
 
 #define RGB16_R(u16) (FDIV(((u16) >> 11) & 0x1FU, 31))
@@ -18,12 +25,13 @@
 
 // Constants
 #define BLACK (vec3(0.0))
-
-#define GRID_DIM 7
-#define GRID_DIM_INV FDIV(1, GRID_DIM)
-#define REGION_COUNT (GRID_DIM*GRID_DIM)
+#define WHITE (vec3(1.0))
+#define RED (vec3(1.0, 0.0, 0.0))
+#define GREEN (vec3(0.0, 1.0, 0.0))
+#define BLUE (vec3(0.0, 0.0, 1.0))
 
 #define REGION_DIM 32
+#define REGION_DIM_INV (1.0/REGION_DIM)
 #define TILES_PER_REGION ((REGION_DIM)*(REGION_DIM))
 #define TILE_SIZE 32
 #define REGION_BYTES ((TILES_PER_REGION)*(TILE_SIZE))
@@ -40,13 +48,10 @@
 #define COLL_DYNAMIC    3U
 #define COLL_SOLID      5U
 
-uniform vec2 iResolution;
-uniform float iTime;
-uniform mat3 iFragProjection;
-uniform struct Config {
-    bool showGrid;
-} iConfig;
-
+struct Rect {
+    vec2 position;
+    vec2 size;
+};
 struct Tile {
     uint fg_mat2_hue_var;
     uint fg_mod2_hueShift_validity;
@@ -60,11 +65,23 @@ struct Tile {
 struct Region {
     Tile tiles[TILES_PER_REGION];
 };
-layout(std430, binding = 1) buffer World {
-    Region gRegions[];
+
+uniform vec2 iResolution;
+uniform float iTime;
+uniform mat3 iFragProjection;
+uniform struct View {
+    ivec2 worldRSize;
+    Rect clipRect;
+} iView;
+uniform struct Config {
+    bool showGrid;
+} iConfig;
+
+layout(std430, binding = 0) buffer World {
+    Region worldRegions[];
 };
 
-out vec4 outputColor;
+out vec4 output_color;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -96,97 +113,108 @@ uint Tile_collision(in Tile tile){ return COLL(tile.liquid_collision_dungeon2); 
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Get the linear tile id in a region, given its 2D coordinate.
-int getTileId(in vec2 normalCoord01){
-    // transform to [0..REGION_DIM]^2
-    ivec2 t = ivec2(normalCoord01 * REGION_DIM);
-    return t.y * REGION_DIM + t.x;
+void locateTile(in vec2 norm01, out vec2 world_coord, out ivec2 region_coord, out ivec2 tile_coord){
+    world_coord = iView.clipRect.position + iView.clipRect.size * norm01;
+    region_coord = ivec2(world_coord / REGION_DIM);
+    tile_coord = ivec2(mod(world_coord, REGION_DIM));
 }
 
-// Get region number in [0, REGION_COUNT) based on pixel coordinate in [0, 1]^2.
-int getRegionId(in vec2 normalCoord01) {
-    ivec2 r01 = ivec2(normalCoord01 * float(GRID_DIM));
-    return r01.y * GRID_DIM + r01.x;
+Tile getWorldTile(in ivec2 region_coord, in ivec2 tile_coord) {
+    int linear_region_id = region_coord.y * iView.worldRSize.x + region_coord.x;
+    int linear_tile_id = tile_coord.y * REGION_DIM + tile_coord.x;
+
+    #if defined(DEBUG_WORLD_REGION_COORD)
+    SET_DEBUG_COLOR(vec3(
+        FDIV(region_coord.x, iView.worldRSize.x),
+        FDIV(region_coord.y, iView.worldRSize.y),
+        0.0
+    ));
+    #elif defined(DEBUG_WORLD_REGION_ID)
+    SET_DEBUG_COLOR(vec3(
+        FDIV(linear_region_id, iView.worldRSize.x * iView.worldRSize.y))
+    );
+    #elif defined(DEBUG_WORLD_REGION_TILE_COORD)
+    SET_DEBUG_COLOR(vec3(
+        tile_coord / float(REGION_DIM),
+        0.0
+    ));
+    #endif
+
+    return worldRegions[linear_region_id].tiles[linear_tile_id];
 }
 
-void getTile(in int regionId, in int tileId, inout Tile tile) {
-    tile = gRegions[regionId].tiles[tileId];
+vec3 unknownRegionColor(in vec2 norm01){
+    float time_offset = iTime * UNKNOWN_REGION_STRIP_SPEED;
+    float pixel = norm01.x * iResolution.x + norm01.y * iResolution.y;
+    return vec3(0.5) * (sin(pixel + time_offset) + 1) * 0.5;
 }
 
-vec3 unknownRegionColor(in vec2 normalCoord01){
-    float timeOffset = iTime * INVALID_REGION_STRIP_SPEED;
-    float pixel = normalCoord01.x * iResolution.x + normalCoord01.y * iResolution.y;
-    return vec3(0.5) * (sin(pixel + timeOffset) + 1) * 0.5;
-}
-
-vec3 tileColor(in int regionId, in int tileId, in vec2 normalCoord01) {
-    Tile tile;
-    getTile(regionId, tileId, tile);
-    float fgHueShift01 = Tile_fgHue(tile);
-    float bgHueShift01 = Tile_bgHue(tile);
+vec3 tileColor(in Tile tile, in vec2 norm01) {
+    float fg_hue_shift_01 = Tile_fgHue(tile);
+    float bg_hue_shift_01 = Tile_bgHue(tile);
     uint coll = Tile_collision(tile);
-    bool validTile = Tile_valid(tile);
+    bool valid_tile = Tile_valid(tile);
 
-    bool knownTile = coll != COLL_UNKNOWN;
+    bool known_tile = coll != COLL_UNKNOWN;
     float collision = float(coll != COLL_EMPTY);
-    vec3 unknownColor = unknownRegionColor(normalCoord01);
+    vec3 unknown_color = unknownRegionColor(norm01);
     vec3 color;
-    if (validTile){
+    if (valid_tile){
         color = mix(
-            hsv2rgb(vec3(bgHueShift01, 1.0, 0.2)),
-            hsv2rgb(vec3(fgHueShift01, 1.0, collision)),
+            hsv2rgb(vec3(bg_hue_shift_01, 1.0, 0.2)),
+            hsv2rgb(vec3(fg_hue_shift_01, 1.0, collision)),
             collision
         );
     } else {
         color = BLACK;
     }
 
-    return mix(unknownColor, color, max(0.5, round(float(knownTile))));
+    return mix(unknown_color, color, max(0.5, round(float(known_tile))));
 }
 
-vec3 gridColor(in vec2 normalCoord01) {
-    vec2 grid_fract = fract(normalCoord01 * GRID_DIM);
-    vec2 grid_proximity = 1.0 / abs(round(grid_fract) - grid_fract);
-    vec3 grid = vec3(GRID_INTENSITY * (grid_proximity.x * grid_proximity.y));
-    return grid;
+vec3 gridColor(in vec2 world_coord, float zoom) {
+    vec2 region_coord = world_coord / REGION_DIM;
+    vec2 dist_to_grid = abs(round(region_coord) - region_coord);
+    float max_dist_to_grid = max(dist_to_grid.x, dist_to_grid.y);
+    float min_dist_to_grid = min(dist_to_grid.x, dist_to_grid.y);
+    float intensity = smoothstep(1.0, 0.0, min_dist_to_grid / GRID_THICKNESS)
+            * step(max_dist_to_grid, GRID_CROSS_LENGTH);
+    return vec3(intensity * pow(min(zoom, 1.0), 5.0));
 }
 
-void mainImage(out vec4 fragColor, in vec2 fragCoord){
-    // r in [-1, +1]^2
-    vec3 r01aug = iFragProjection * vec3(fragCoord, 1.0);
-    vec2 r01 = r01aug.xy / r01aug.z;
-    vec2 r = r01.xy * 2.0 - 1.0;
+vec4 mainImage(in vec2 frag_coord){
+
+    vec3 n01aug = iFragProjection * vec3(frag_coord, 1.0);
+    vec2 n01 = n01aug.xy / n01aug.z;    // Normalized coord in [0, 1]^2
+    float zoom = FDIV(iResolution.x, iView.clipRect.size.x);
     vec3 pixel;
 
-    int regionId = getRegionId(r01);
-    vec2 regionCoord01 = mod(r01, GRID_DIM_INV) * GRID_DIM;
-    int tileId = getTileId(regionCoord01);
-    pixel = tileColor(regionId, tileId, r01);
+    if (iView.clipRect.size.x == 0) {
+        pixel = mix(BLACK, unknownRegionColor(n01), 0.5);
+    } else {
+        vec2 world_coord;
+        ivec2 region_coord;
+        ivec2 tile_coord;
+        locateTile(n01, world_coord, region_coord, tile_coord);
+        Tile tile = getWorldTile(region_coord, tile_coord);
+        pixel = tileColor(tile, n01);
 
-    #ifdef DEBUG_TILE_ID
-    pixel = vec3(
-        FDIV(mod(tileId, REGION_DIM), REGION_DIM),
-        FDIV(FDIV(tileId, REGION_DIM), REGION_DIM),
-        0.0
-    );
-    #endif
-    if (iConfig.showGrid){
-        pixel += gridColor(r01);
+        if (iConfig.showGrid){
+            pixel += gridColor(world_coord, zoom);
+        }
     }
 
-    #ifdef DEBUG_REGION_ID
-    pixel = vec3(
-        FDIV(mod(regionId, GRID_DIM), GRID_DIM),
-        FDIV(FDIV(regionId, GRID_DIM), GRID_DIM),
-        0.0
-    );
-    #endif
-
-    fragColor = vec4(pixel, 1.0);
+    return vec4(pixel, 1.0);
 }
 
 void main()
 {
-    vec2 fragCoord = gl_FragCoord.xy;
-    mainImage(outputColor, fragCoord);
+    vec2 frag_coord = gl_FragCoord.xy;
+    vec4 color = mainImage(frag_coord);
+
+    if (IS_DEBUG_COLOR_SET()) {
+        output_color = GET_DEBUG_COLOR();
+    } else {
+        output_color = color;
+    }
 }
