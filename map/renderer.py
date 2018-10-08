@@ -59,6 +59,7 @@ class RenderParameters:
     """(min, max) representing region in viewport [0, 1]^2 to draw the map"""
     time_in_seconds: float = 0
     """time since the application started"""
+    tile_selected: tp.Optional[np.ndarray] = None
 
 
 def init_target(initial_state: RenderState) -> RenderTarget:  # pragma: no cover
@@ -169,15 +170,18 @@ class WorldRenderer:  # pragma: no cover
             gl.glGetUniformLocation(target.program, "iConfig.showGrid"),
             params.showGrid)
 
-        if self._view:
-            clip_rect = self._view.clip_rect(canvas_size=rect_resolution)
+        if params.tile_selected is not None:
             gl.glUniform2iv(
-                gl.glGetUniformLocation(target.program, "iView.worldTSize"),
-                1,
+                gl.glGetUniformLocation(target.program, "iTileSelected"), 1,
+                params.tile_selected.astype(np.int32))
+
+        if self._view:
+            clip_rect = self._view.clip_rect()
+            gl.glUniform2iv(
+                gl.glGetUniformLocation(target.program, "iView.worldTSize"), 1,
                 self._view.world.t_size.astype(np.int32))
             gl.glUniform2iv(
-                gl.glGetUniformLocation(target.program, "iView.worldRSize"),
-                1,
+                gl.glGetUniformLocation(target.program, "iView.worldRSize"), 1,
                 self._view.world.r_size.astype(np.int32))
             gl.glUniform2fv(
                 gl.glGetUniformLocation(target.program,

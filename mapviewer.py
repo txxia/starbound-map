@@ -102,7 +102,8 @@ class WorldViewer:
         imgui.new_frame()
 
         if self.view:
-            self.view.frame_size = frame_size
+            self.view.canvas_size = frame_size * G.render_params.canvas_rect.size
+
         self.show_map_controller_window()
 
         if G.gui_show_help_overlay:
@@ -138,13 +139,16 @@ class WorldViewer:
             return
         G.tile_selected = None
         if self.view is not None:
-            if not self.io.want_capture_mouse:
+            mouse_in_window = np.all(np.logical_and(G.mouse_in_map_normal01 >= 0,
+                                                    G.mouse_in_map_normal01 <= 1))
+            if not self.io.want_capture_mouse and mouse_in_window:
                 tile_coord = self.view.trace(coord01=G.mouse_in_map_normal01)
                 if self.view.world.is_valid_tile_coord(*tile_coord):
                     G.tile_selected = (
                         tile_coord,
                         self.view.world.get_tile(*tile_coord)
                     )
+                    G.render_params.tile_selected = tile_coord
 
             # Zooming
             if not self.io.want_capture_mouse and self.io.mouse_wheel:

@@ -1,5 +1,4 @@
 import math
-import typing as tp
 
 import numpy as np
 
@@ -18,11 +17,11 @@ class WorldViewController:
         self._frame_size = np.ones(2)
 
     @property
-    def frame_size(self) -> np.ndarray:
+    def canvas_size(self) -> np.ndarray:
         return self._frame_size
 
-    @frame_size.setter
-    def frame_size(self, value: np.ndarray):
+    @canvas_size.setter
+    def canvas_size(self, value: np.ndarray):
         assert value.size == 2
         assert np.all(value > 0)
         self._frame_size = value
@@ -63,7 +62,7 @@ class WorldViewController:
         This value allows at least one region to be displayed.
         :return: suggested max zoom
         """
-        return math.log(np.min(self.frame_size) / REGION_DIM)
+        return math.log(np.min(self.canvas_size) / REGION_DIM)
 
     @property
     def min_zoom(self) -> float:
@@ -72,7 +71,7 @@ class WorldViewController:
         This value allows the entire map to be displayed.
         :return: suggested min zoom
         """
-        return math.log(np.min(self.frame_size) / np.max(self._m.world.t_size))
+        return math.log(np.min(self.canvas_size) / np.max(self._m.world.t_size))
 
     def control_focus(self, delta: np.ndarray):
         self._m.focus = np.clip(self.focus + delta, np.zeros(2), self.world.t_size)
@@ -95,16 +94,12 @@ class WorldViewController:
         rect = self.clip_rect()
         return (rect.position + coord01 * rect.size).astype(np.int)
 
-    def clip_rect(self, canvas_size: tp.Optional[np.ndarray] = None) -> Rect:
+    def clip_rect(self) -> Rect:
         """
         Tile-level clipping rectangle of this view.
         Note that the vertices of this rect is not necessarily inside the map.
         :param canvas_size: size of the canvas to draw this view
         """
-        if canvas_size is None:
-            canvas_size = self.frame_size
-        assert canvas_size.size == 2
-        assert np.all(canvas_size > 0)
-        rect_size = canvas_size / math.exp(self.zoom)
+        rect_size = self.canvas_size / math.exp(self.zoom)
         position = self.focus - rect_size / 2
         return Rect(position[0], position[1], rect_size[0], rect_size[1])

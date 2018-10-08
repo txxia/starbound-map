@@ -9,7 +9,7 @@ from utils import shape
 
 class TestWorldViewController(TestCase):
     WORLD_SIZE = np.array([400, 300])
-    FRAME_SIZE = np.array([100, 50])
+    CANVAS_SIZE = np.array([100, 50])
     FOCUS = np.zeros(2)
     ZOOM = 0
     CLIP_RECT = shape.Rect(x=-50, y=-25, width=100, height=50)
@@ -22,7 +22,7 @@ class TestWorldViewController(TestCase):
         self.mock_world_view.world = self.mock_world
 
         self.controller = controller.WorldViewController(self.mock_world_view)
-        self.controller.frame_size = self.FRAME_SIZE
+        self.controller.canvas_size = self.CANVAS_SIZE
         self.controller.focus = self.FOCUS
         self.controller.zoom = self.ZOOM
 

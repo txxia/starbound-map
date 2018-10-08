@@ -17,6 +17,7 @@
 #define GRID_THICKNESS 0.3
 #define GRID_CROSS_LENGTH 4
 #define UNKNOWN_REGION_STRIP_SPEED 10.0
+#define TILE_HIGHLIGHT_RADIUS 0.5
 #define OO_BOUND_FADE_ALPHA 0.1
 #define OO_BOUND_FADE_DISTANCE (REGION_DIM * 10)
 
@@ -82,6 +83,7 @@ uniform struct View {
 uniform struct Config {
     bool showGrid;
 } iConfig;
+uniform ivec2 iTileSelected;
 
 layout(std430, binding = 0) buffer World {
     Region worldRegions[];
@@ -184,6 +186,16 @@ vec3 tileColor(in Tile tile, in vec2 norm01) {
     return mix(unknown_color, color, max(0.5, round(float(known_tile))));
 }
 
+vec3 boxShadow(in vec3 color, in vec2 world_coord, in vec2 position, in vec2 size, in float radius) {
+    vec2 half_size = size / 2;
+    vec2 box_center = position + half_size;
+    vec2 dist_to_box = abs(world_coord - box_center) - half_size;
+    float max_dist_to_box = max(dist_to_box.x, dist_to_box.y);
+    float intensity = 1.0 - smoothstep(0, radius, max_dist_to_box);
+    intensity *= step(0.0, max_dist_to_box); // outer shadow only
+    return intensity * color;
+}
+
 vec3 regionGridColor(in vec2 world_coord, float zoom) {
     vec2 region_coord = world_coord / REGION_DIM;
     vec2 dist_to_grid = abs(round(region_coord) - region_coord) * REGION_DIM;
@@ -220,6 +232,8 @@ vec4 mainImage(in vec2 frag_coord){
     } else {
         Tile tile = getWorldTile(region_coord, tile_coord);
         frag_color = tileColor(tile, n01);
+
+        frag_color += boxShadow(WHITE, world_coord, iTileSelected, vec2(1.0), TILE_HIGHLIGHT_RADIUS);
 
         // Fade out when the tile is out of boundary
         frag_color = mix(frag_color, BLACK,
