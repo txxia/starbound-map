@@ -44,6 +44,7 @@ class G:
 
     gui_show_help_overlay: bool = False
     gui_config_changed: bool = False
+    gui_show_tile_details: bool = True
 
     job: tp.Optional[asyncjob.AsyncJob] = None
 
@@ -202,6 +203,9 @@ class WorldViewer:
 
         _, G.render_params.showGrid = imgui.checkbox("Grid",
                                                      G.render_params.showGrid)
+        imgui.same_line()
+        _, G.gui_show_tile_details = imgui.checkbox("Tile Details",
+                                                    G.gui_show_tile_details)
 
         imgui.separator()
         if imgui.tree_node("World Info",
@@ -237,6 +241,20 @@ class WorldViewer:
             imgui.begin_tooltip()
             imgui.push_item_width(100)
             imgui.label_text('tile', str(coord))
+
+            # tile details
+            if G.gui_show_tile_details:
+                imgui.label_text('fg.material', f"0x{tile.foreground_material & 0xffff:04X}")
+                imgui.label_text('bg.material', f"0x{tile.background_material & 0xffff:04X}")
+                imgui.label_text('liquid', f"{tile.liquid & 0xff:02X}")
+                imgui.label_text('liquid.level', f"{tile.liquid_level:.2f}")
+                imgui.label_text('liquid.pressure', f"{tile.liquid_pressure:.2f}")
+                imgui.label_text('collision', f"{tile.collision}")
+                imgui.label_text('dungeon_id', f"0x{tile.dungeon_id & 0xffff:04X}")
+                imgui.label_text('biome', f"0x{tile.biome & 0xff:02X}")
+                imgui.label_text('biome_2', f"0x{tile.biome_2 & 0xff:02X}")
+                imgui.label_text('indestructible', f"{tile.indestructible}")
+
             imgui.pop_item_width()
             imgui.end_tooltip()
 

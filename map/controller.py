@@ -98,7 +98,6 @@ class WorldViewController:
         """
         Tile-level clipping rectangle of this view.
         Note that the vertices of this rect is not necessarily inside the map.
-        :param canvas_size: size of the canvas to draw this view
         """
         rect_size = self.canvas_size / math.exp(self.zoom)
         position = self.focus - rect_size / 2
