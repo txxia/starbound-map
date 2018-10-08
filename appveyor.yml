@@ -32,8 +32,8 @@ test_script:
 - python -m pytest
 
 artifacts:
-- path: 'dist/*.exe'
-- path: 'build/coverage/html/*'
+- path: 'dist\*'
+- path: 'build\coverage\html\*'
 
 deploy:
 - provider: GitHub
@@ -41,8 +41,8 @@ deploy:
   description: Build v$(appveyor_build_version)
   auth_token:
     secure: aEuceXtTw4tyxWydRznIxKqzxFIkZAFriOlmvvjYFsmP57I/0uWNWCZc2GcRylOa
-  artifact: dist/StarboundMapViewer.exe
-  draft: false
+  artifact: dist\StarboundMapViewer.exe
+  draft: true
   on:
     branch: master
     appveyor_repo_tag: false
