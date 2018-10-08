@@ -33,7 +33,9 @@ test_script:
 
 artifacts:
 - path: 'dist\*'
+  name: Executable
 - path: 'build\coverage\html\*'
+  name: Coverage Report
 
 deploy:
 - provider: GitHub
@@ -41,7 +43,7 @@ deploy:
   description: Build v$(appveyor_build_version)
   auth_token:
     secure: aEuceXtTw4tyxWydRznIxKqzxFIkZAFriOlmvvjYFsmP57I/0uWNWCZc2GcRylOa
-  artifact: dist\StarboundMapViewer.exe
+  artifact: Executable
   draft: true
   on:
     branch: master
