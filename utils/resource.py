@@ -1,4 +1,3 @@
-import logging
 import os
 import sys
 
@@ -14,5 +13,4 @@ def asset_path(relative_path: str) -> str:
         base_path = os.path.abspath(DEV_ASSET_PATH)
     else:
         base_path = sys._MEIPASS
-    logging.debug("asset path: %s", base_path)
     return os.path.join(base_path, relative_path)

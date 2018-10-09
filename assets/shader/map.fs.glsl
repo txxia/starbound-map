@@ -74,7 +74,6 @@ struct Region {
 
 uniform vec2 iResolution;
 uniform float iTime;
-uniform mat3 iFragProjection;
 uniform struct View {
     ivec2 worldRSize;
     ivec2 worldTSize;
@@ -212,9 +211,7 @@ vec3 boundaryGridColor(in float world_coord_validity) {
 }
 
 vec4 mainImage(in vec2 frag_coord){
-
-    vec3 n01aug = iFragProjection * vec3(frag_coord, 1.0);
-    vec2 n01 = n01aug.xy / n01aug.z;    // Normalized coord in [0, 1]^2
+    vec2 n01 = frag_coord / iResolution;  // Normalized coord in [0, 1]^2
     float zoom = FDIV(iResolution.x, iView.clipRect.size.x);
     vec3 frag_color;
 

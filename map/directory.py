@@ -44,7 +44,7 @@ class GameDirectory:
         else:
             world_fd = open(world_file, 'rb')
             world_mm = mmap.mmap(world_fd.fileno(), 0, access=mmap.ACCESS_READ)
-            world = World(sbdata.World(world_mm))
+            world = World(sbdata.World(world_mm), coordinates=coord)
             logging.debug('Loaded world [%s] at %s', coord, world_file)
             return world
 

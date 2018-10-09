@@ -14,17 +14,17 @@ class WorldViewController:
 
     def __init__(self, m: WorldView):
         self._m = m
-        self._frame_size = np.ones(2)
+        self._canvas_size = np.ones(2)
 
     @property
     def canvas_size(self) -> np.ndarray:
-        return self._frame_size
+        return self._canvas_size
 
     @canvas_size.setter
     def canvas_size(self, value: np.ndarray):
         assert value.size == 2
         assert np.all(value > 0)
-        self._frame_size = value
+        self._canvas_size = value
 
     @property
     def world(self) -> World:

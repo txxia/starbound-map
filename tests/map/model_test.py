@@ -80,7 +80,7 @@ class TestTile(TestCase):
 
 class TestWorld(TestCase):
     REGION_COORD = np.array([1, 2])
-
+    WORLD_COORD = "TestCoord"
     METADATA = mock.MagicMock()
 
     def setUp(self):
@@ -89,7 +89,7 @@ class TestWorld(TestCase):
         self.mock_dao.height = WORLD_HEIGHT_IN_TILES
         self.mock_dao.metadata = self.METADATA
 
-        self.world = model.World(self.mock_dao)
+        self.world = model.World(self.mock_dao, coordinates=self.WORLD_COORD)
 
     def test_properties(self):
         assert WORLD_WIDTH_IN_TILES == self.world.t_width

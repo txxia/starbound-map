@@ -72,9 +72,14 @@ class Tile(_RawTile):
 
 
 class World:
-    def __init__(self, dao: sbdata.World):
+    def __init__(self, dao: sbdata.World, coordinates: str):
         self.__dao = dao
         self.__dao.read_metadata()
+        self.__coordinates = coordinates
+
+    @cache.lazy_property
+    def coordinates(self) -> str:
+        return self.__coordinates  # TODO prettify this
 
     @cache.lazy_property
     def r_width(self) -> int:

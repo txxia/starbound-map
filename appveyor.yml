@@ -32,7 +32,7 @@ test_script:
 - python -m pytest
 
 artifacts:
-- path: 'dist\*'
+- path: 'dist\*.exe'
   name: Executable
 - path: 'build\coverage\html\*'
   name: Coverage Report
@@ -43,7 +43,7 @@ deploy:
   description: Build v$(appveyor_build_version)
   auth_token:
     secure: aEuceXtTw4tyxWydRznIxKqzxFIkZAFriOlmvvjYFsmP57I/0uWNWCZc2GcRylOa
-  artifact: Executable
+  artifact: /.*\.exe/
   draft: true
   on:
     branch: master
