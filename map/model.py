@@ -71,6 +71,11 @@ class Tile(_RawTile):
         return self._data
 
 
+class TileMaterialLayer:
+    BACKGROUND = 1 << 0
+    FOREGROUND = 1 << 1
+
+
 class World:
     def __init__(self, dao: sbdata.World, coordinates: str):
         self.__dao = dao

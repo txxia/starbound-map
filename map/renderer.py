@@ -8,7 +8,7 @@ from OpenGL.GL import shaders
 from utils import asyncjob
 from utils.resource import asset_path
 from .controller import WorldViewController
-from .model import REGION_SIZE
+from .model import REGION_SIZE, TileMaterialLayer
 
 QUAD_VERTS_BL = 0
 QUAD_VERTS_BR = 1
@@ -55,6 +55,7 @@ class RenderParameters:
     time_in_seconds: float = 0
     """time since the application started"""
     tile_selected: tp.Optional[np.ndarray] = None
+    tile_mat_layer_mask: np.uint = TileMaterialLayer.FOREGROUND | TileMaterialLayer.BACKGROUND
 
 
 def init_target() -> RenderTarget:  # pragma: no cover
@@ -200,6 +201,8 @@ class WorldRenderer:  # pragma: no cover
                        params.time_in_seconds)
         gl.glUniform1i(gl.glGetUniformLocation(target.program, "iConfig.showGrid"),
                        params.showGrid)
+        gl.glUniform1ui(gl.glGetUniformLocation(target.program, "iMaterialLayers"),
+                        params.tile_mat_layer_mask)
 
         if params.tile_selected is not None:
             gl.glUniform2iv(

@@ -2,7 +2,7 @@ import logging
 
 from gui.core import *
 from map.directory import GameDirectory
-from map.model import WorldView
+from map.model import TileMaterialLayer, WorldView
 
 
 class MapControllerWindow(GUIWindow):
@@ -70,11 +70,25 @@ class MapControllerWindow(GUIWindow):
             self.state.view.control_focus(focus_v)
             imgui.separator()
 
-        _, self.state.render_params.showGrid = imgui.checkbox("Grid",
-                                                              self.state.render_params.showGrid)
-        imgui.same_line()
-        _, self.state.show_tile_details = imgui.checkbox("Tile Details",
-                                                         self.state.show_tile_details)
+        if imgui.collapsing_header("Material")[0]:
+            _, self.state.render_params.tile_mat_layer_mask = imgui.checkbox_flags(
+                "Foreground",
+                self.state.render_params.tile_mat_layer_mask,
+                TileMaterialLayer.FOREGROUND)
+            _, self.state.render_params.tile_mat_layer_mask = imgui.checkbox_flags(
+                "Background",
+                self.state.render_params.tile_mat_layer_mask,
+                TileMaterialLayer.BACKGROUND
+            )
+
+        if imgui.collapsing_header("Misc")[0]:
+            _, self.state.render_params.showGrid = imgui.checkbox(
+                "Grid",
+                self.state.render_params.showGrid)
+            imgui.same_line()
+            _, self.state.show_tile_details = imgui.checkbox(
+                "Tile Details",
+                self.state.show_tile_details)
 
         imgui.separator()
         if imgui.tree_node("World", flags=imgui.TREE_NODE_DEFAULT_OPEN):

@@ -34,6 +34,7 @@
 #define GET_DEBUG_COLOR() (vec4(output_color.xyz, 1.0))
 
 #define FDIV(a, b) (float(a) / float(b))
+#define HAS_FLAG(flags, target) (((flags) & (target)) != 0)
 
 #define RGB16_R(u16) (FDIV(((u16) >> 11) & 0x1FU, 31))
 #define RGB16_G(u16) (FDIV(((u16) >> 5) & 0x3FU, 63))
@@ -53,6 +54,10 @@
 #define COLL_PLATFORM   2U
 #define COLL_DYNAMIC    3U
 #define COLL_SOLID      5U
+
+// Layers
+#define MAT_LAYER_BG (1 << 0)
+#define MAT_LAYER_FG (1 << 1)
 
 struct Rect {
     vec2 position;
@@ -82,6 +87,7 @@ uniform struct View {
 uniform struct Config {
     bool showGrid;
 } iConfig;
+uniform uint iMaterialLayers;
 uniform ivec2 iTileSelected;
 
 layout(std430, binding = 0) buffer World {
@@ -163,26 +169,22 @@ vec3 unknownRegionColor(in vec2 norm01){
 }
 
 vec3 tileColor(in Tile tile, in vec2 norm01) {
-    float fg_hue_shift_01 = Tile_fgHue(tile);
     float bg_hue_shift_01 = Tile_bgHue(tile);
+    float fg_hue_shift_01 = Tile_fgHue(tile);
     uint coll = Tile_collision(tile);
     bool valid_tile = Tile_valid(tile);
 
     bool known_tile = coll != COLL_UNKNOWN;
     float collision = float(coll != COLL_EMPTY);
     vec3 unknown_color = unknownRegionColor(norm01);
-    vec3 color;
-    if (valid_tile){
-        color = mix(
-            hsv2rgb(vec3(bg_hue_shift_01, 1.0, 0.2)),
-            hsv2rgb(vec3(fg_hue_shift_01, 1.0, collision)),
-            collision
-        );
-    } else {
-        color = BLACK;
-    }
+    vec3 bg_color = hsv2rgb(vec3(bg_hue_shift_01, 1.0, 0.4));
+    vec3 fg_color = hsv2rgb(vec3(fg_hue_shift_01, 1.0, collision));
+    vec3 tile_color = BLACK;
+    tile_color = mix(tile_color, bg_color, int(HAS_FLAG(iMaterialLayers, MAT_LAYER_BG)));
+    tile_color = mix(tile_color, fg_color, int(HAS_FLAG(iMaterialLayers, MAT_LAYER_FG)) * collision);
+    tile_color = mix(BLACK, tile_color, valid_tile);
 
-    return mix(unknown_color, color, max(0.5, round(float(known_tile))));
+    return mix(unknown_color, tile_color, max(0.5, round(float(known_tile))));
 }
 
 vec3 boxShadow(in vec3 color, in vec2 world_coord, in vec2 position, in vec2 size, in float radius) {
