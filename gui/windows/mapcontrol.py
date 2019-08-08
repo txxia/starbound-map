@@ -24,6 +24,8 @@ class MapControllerWindow(GUIWindow):
             self.gamedata.game_root = self.config[self.CONFIG_GAME_ROOT]
 
     def begin_gui(self) -> bool:
+        imgui.set_next_window_position(400, 100, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_size(400, 400, imgui.FIRST_USE_EVER)
         if not imgui.begin("Map Info", closable=False):
             return False
         if self.state.view is not None:

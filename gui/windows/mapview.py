@@ -21,6 +21,8 @@ class MapWindow(GUIWindow):
             self.renderer.change_view(self.state.view)
 
     def begin_gui(self) -> bool:
+        imgui.set_next_window_position(0, 100, imgui.FIRST_USE_EVER)
+        imgui.set_next_window_size(400, 400, imgui.FIRST_USE_EVER)
         if not imgui.begin(self.WINDOW_NAME, closable=False,
                            flags=imgui.WINDOW_NO_SCROLLBAR):
             return False

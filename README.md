@@ -1,6 +1,7 @@
 Starbound Map Viewer
 ====================
 [![Build status](https://ci.appveyor.com/api/projects/status/c9xt316vgaqfte9c/branch/master?svg=true)](https://ci.appveyor.com/project/txxia/starbound-map/branch/master)
+[![Downloads](https://img.shields.io/github/downloads/txxia/starbound-map/total.svg)](https://github.com/txxia/starbound-map/releases)
 
 This tool is built on top of @blixt's awesome work: [Starbound Utilities](https://github.com/blixt/py-starbound).
 
